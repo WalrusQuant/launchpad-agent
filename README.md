@@ -12,7 +12,13 @@
 A Rust-based coding agent with a polished TUI, pluggable providers, and MCP support.
 Early-stage, single-author project — usable today for daily coding, not yet production-ready.
 
+Designed as a first-class companion to [Launchpad](https://github.com/WalrusQuant/launchpad), a modern terminal — though it runs in any terminal.
+
 <img src="./docs/assets/welcome.png" alt="Launchpad Agent welcome screen" width="820" />
+
+Running inside Launchpad with the file explorer and git panel open:
+
+<img src="./docs/assets/launchpad-integration.png" alt="Launchpad Agent running inside the Launchpad terminal" width="960" />
 
 </div>
 
