@@ -3,11 +3,11 @@ use std::pin::Pin;
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
+use futures::{Stream, StreamExt};
 use lpa_protocol::{
     ModelRequest, ModelResponse, ProviderFamily, RequestContent, ResponseContent, ResponseExtra,
     ResponseMetadata, StopReason, StreamEvent, Usage,
 };
-use futures::{Stream, StreamExt};
 use reqwest::Client;
 use reqwest::header::{CONTENT_TYPE, HeaderValue};
 use reqwest_eventsource::{Event, EventSource};
@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 use tracing::debug;
 
 use super::GoogleRole;
-use crate::{ProviderAdapter, ProviderCapabilities, ModelProviderSDK, merge_extra_body};
+use crate::{ModelProviderSDK, ProviderAdapter, ProviderCapabilities, merge_extra_body};
 
 pub struct GoogleProvider {
     client: Client,
@@ -305,11 +305,7 @@ impl ProviderAdapter for GoogleProvider {
 }
 
 fn build_request(request: &ModelRequest) -> Value {
-    let contents: Vec<Value> = request
-        .messages
-        .iter()
-        .map(build_content_message)
-        .collect();
+    let contents: Vec<Value> = request.messages.iter().map(build_content_message).collect();
 
     let mut body = json!({
         "contents": contents,
@@ -421,9 +417,9 @@ fn parse_response(value: Value) -> Result<ModelResponse> {
                     if let Some(text) = part.get("text").and_then(Value::as_str) {
                         if is_thought {
                             if !text.is_empty() {
-                                metadata
-                                    .extras
-                                    .push(ResponseExtra::ReasoningText { text: text.to_string() });
+                                metadata.extras.push(ResponseExtra::ReasoningText {
+                                    text: text.to_string(),
+                                });
                             }
                         } else {
                             content.push(ResponseContent::Text(text.to_string()));
@@ -531,7 +527,7 @@ mod tests {
     use pretty_assertions::assert_eq;
     use serde_json::json;
 
-    use super::{build_request, parse_response, parse_finish_reason};
+    use super::{build_request, parse_finish_reason, parse_response};
     use lpa_protocol::{ResponseContent, ResponseExtra, StopReason};
 
     #[test]
@@ -583,10 +579,7 @@ mod tests {
 
         let body = build_request(&request);
 
-        assert_eq!(
-            body["generationConfig"]["maxOutputTokens"],
-            json!(1024)
-        );
+        assert_eq!(body["generationConfig"]["maxOutputTokens"], json!(1024));
         assert_eq!(body["generationConfig"]["temperature"], json!(0.2));
         assert_eq!(body["generationConfig"]["topP"], json!(0.9));
         assert_eq!(body["generationConfig"]["topK"], json!(40));

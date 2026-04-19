@@ -169,7 +169,9 @@ fn handle_line(
         return;
     }
 
-    let candidate: &str = if pending.is_empty() { trimmed } else {
+    let candidate: &str = if pending.is_empty() {
+        trimmed
+    } else {
         pending.push_str(line);
         pending.as_str()
     };

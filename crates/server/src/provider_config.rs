@@ -7,8 +7,8 @@ use lpa_core::{
 };
 use lpa_protocol::ProviderFamily;
 use lpa_provider::{
-    ModelProviderSDK, anthropic::AnthropicProvider, google::GoogleProvider,
-    openai::OpenAIProvider, openai::OpenAIResponsesProvider,
+    ModelProviderSDK, anthropic::AnthropicProvider, google::GoogleProvider, openai::OpenAIProvider,
+    openai::OpenAIResponsesProvider,
 };
 
 /// Resolved provider bootstrap owned by the server runtime.

@@ -12,12 +12,12 @@ use tokio::process::Command;
 use tokio::time::timeout;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 
+use futures::stream;
 use lpa_core::{FileSystemSkillCatalog, PresetModelCatalog, SkillsConfig};
 use lpa_protocol::{ModelRequest, ModelResponse, StreamEvent};
 use lpa_provider::ModelProviderSDK;
 use lpa_server::{ServerRuntime, ServerRuntimeDependencies};
 use lpa_tools::ToolRegistry;
-use futures::stream;
 
 fn write_test_config(home_dir: &TempDir, listen: &[&str]) -> Result<()> {
     let config_dir = home_dir.path().join(".lpagent");
@@ -183,9 +183,8 @@ async fn websocket_listener_supports_handshake_subscription_and_turn_lifecycle()
         port
     };
     let bind_address = format!("127.0.0.1:{port}");
-    let mcp_manager: Arc<dyn lpa_mcp::McpManager> = Arc::new(
-        lpa_mcp::StdMcpManager::from_config(&lpa_mcp::McpConfig::default()).unwrap(),
-    );
+    let mcp_manager: Arc<dyn lpa_mcp::McpManager> =
+        Arc::new(lpa_mcp::StdMcpManager::from_config(&lpa_mcp::McpConfig::default()).unwrap());
     let runtime = ServerRuntime::new(
         std::env::temp_dir(),
         ServerRuntimeDependencies::new(
@@ -201,9 +200,7 @@ async fn websocket_listener_supports_handshake_subscription_and_turn_lifecycle()
     );
     let listen = vec![format!("ws://{bind_address}")];
     let listener_task =
-        tokio::spawn(
-            async move { lpa_server::run_listeners(Arc::clone(&runtime), &listen).await },
-        );
+        tokio::spawn(async move { lpa_server::run_listeners(Arc::clone(&runtime), &listen).await });
 
     tokio::time::sleep(Duration::from_millis(200)).await;
 

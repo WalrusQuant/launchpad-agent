@@ -95,8 +95,7 @@ impl McpClient {
         R: DeserializeOwned,
     {
         let id = RequestId::from_u64(self.next_id.fetch_add(1, Ordering::Relaxed));
-        let frame =
-            encode_request(&id, method, Some(params)).map_err(McpClientError::Serialize)?;
+        let frame = encode_request(&id, method, Some(params)).map_err(McpClientError::Serialize)?;
         let rx = self.pending.register(id.clone());
         self.transport.send(frame).await?;
 
@@ -126,8 +125,7 @@ impl McpClient {
 
     /// Sends a notification with no params.
     pub async fn notify_bare(&self, method: &str) -> Result<(), McpClientError> {
-        let frame =
-            encode_notification::<()>(method, None).map_err(McpClientError::Serialize)?;
+        let frame = encode_notification::<()>(method, None).map_err(McpClientError::Serialize)?;
         self.transport.send(frame).await?;
         Ok(())
     }

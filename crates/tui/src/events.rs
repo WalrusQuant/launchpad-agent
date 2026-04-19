@@ -3,12 +3,12 @@ use std::time::{Duration, Instant};
 use lpa_core::ProviderWireApi;
 use lpa_core::SessionId;
 use lpa_protocol::ProviderFamily;
+#[cfg(test)]
 const TOOL_RESULT_FOLD_INITIAL_DELAY_MS: u64 = 420;
 /// Stage at which tool output shows a ~4-line preview with a `…` suffix and
 /// does not animate further. Used for both live and restored tool outputs.
 const TOOL_RESULT_PREVIEW_STAGE: u8 = 1;
 const TOOL_RESULT_FOLD_STEP_DELAY_MS: u64 = 90;
-const TOOL_RESULT_FOLD_FINAL_STAGE: u8 = 3;
 
 /// One thinking option shown in the interactive thinking picker.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -268,6 +268,7 @@ impl TranscriptItem {
     }
 
     /// Marks a tool-output item for the compacting fold animation.
+    #[cfg(test)]
     pub(crate) fn with_tool_fold(mut self) -> Self {
         self.fold_next_at =
             Some(Instant::now() + Duration::from_millis(TOOL_RESULT_FOLD_INITIAL_DELAY_MS));

@@ -180,7 +180,10 @@ pub fn encode_notification<P: Serialize>(
 }
 
 /// Serializes a successful response frame.
-pub fn encode_response_success(id: &RequestId, result: Value) -> Result<Vec<u8>, serde_json::Error> {
+pub fn encode_response_success(
+    id: &RequestId,
+    result: Value,
+) -> Result<Vec<u8>, serde_json::Error> {
     let frame = JsonRpcResponse {
         jsonrpc: JSONRPC_VERSION.to_owned(),
         id: id.clone(),

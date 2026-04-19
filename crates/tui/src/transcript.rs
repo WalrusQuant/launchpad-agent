@@ -178,12 +178,7 @@ pub(crate) const LAUNCHPAD_LOGO: &str = r"  _                            _      
 ///
 ///   Or just type a message to begin.
 /// ```
-pub(crate) fn format_welcome_banner(
-    model: &str,
-    cwd: &Path,
-    version: &str,
-    width: u16,
-) -> String {
+pub(crate) fn format_welcome_banner(model: &str, cwd: &Path, version: &str, width: u16) -> String {
     let inner_width = width.saturating_sub(2).clamp(56, 76) as usize;
 
     let mut out = String::new();
@@ -201,8 +196,8 @@ pub(crate) fn format_welcome_banner(
     // Right-align the version tag within the tagline row.
     let tagline = "Any model. Any terminal.";
     let version_tag = format!("v{version}");
-    let padding = inner_width
-        .saturating_sub(tagline.chars().count() + version_tag.chars().count() + 5);
+    let padding =
+        inner_width.saturating_sub(tagline.chars().count() + version_tag.chars().count() + 5);
     append_box_line(
         &mut out,
         &format!("   {tagline}{}{version_tag}", " ".repeat(padding.max(3))),
@@ -217,10 +212,7 @@ pub(crate) fn format_welcome_banner(
     // Context — cyan diamonds before key/value rows read as bullets without
     // being loud.
     out.push_str(&format!("  ◆  model       {model}\n"));
-    out.push_str(&format!(
-        "  ◆  directory   {}\n\n",
-        abbreviate_cwd(cwd)
-    ));
+    out.push_str(&format!("  ◆  directory   {}\n\n", abbreviate_cwd(cwd)));
 
     out.push_str("  Get started\n");
     out.push_str("    ❯ /configure   pick a provider (OpenRouter, OpenAI, Ollama, …)\n");

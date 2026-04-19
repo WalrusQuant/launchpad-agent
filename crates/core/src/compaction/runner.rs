@@ -15,10 +15,10 @@ use crate::{
     PromptAssemblyInput, SessionState,
 };
 
+use super::COMPACTION_SYSTEM_PROMPT;
 use super::llm_compactor::LlmContextCompactor;
 use super::prompt::{CompactionPromptInput, build_compaction_user_prompt, serialize_transcript};
 use super::selector::EligibilitySelector;
-use super::COMPACTION_SYSTEM_PROMPT;
 
 /// Reports the result of one compaction attempt so callers can persist the
 /// snapshot, emit events, and drive UI updates without re-inspecting
@@ -184,14 +184,9 @@ mod tests {
             r#"{"summary_text":"ok","preserved_facts":[],"open_loops":[]}"#,
         );
         let mut session = session_with_history(&[(true, "hi"), (false, "hello")]);
-        let outcome = run_llm_compaction(
-            &mut session,
-            provider,
-            "m",
-            &EligibilitySelector::new(3),
-        )
-        .await
-        .expect("no error");
+        let outcome = run_llm_compaction(&mut session, provider, "m", &EligibilitySelector::new(3))
+            .await
+            .expect("no error");
         assert_eq!(outcome, None);
         assert!(session.active_compaction.is_none());
     }
@@ -280,13 +275,8 @@ mod tests {
             (true, "t4"),
             (false, "r4"),
         ]);
-        let result = run_llm_compaction(
-            &mut session,
-            provider,
-            "m",
-            &EligibilitySelector::new(2),
-        )
-        .await;
+        let result =
+            run_llm_compaction(&mut session, provider, "m", &EligibilitySelector::new(2)).await;
         assert!(matches!(
             result,
             Err(CompactionError::SummaryProviderFailed { .. })
@@ -312,14 +302,9 @@ mod tests {
         let _guard = session
             .try_begin_compaction()
             .expect("test acquires the lock");
-        let outcome = run_llm_compaction(
-            &mut session,
-            provider,
-            "m",
-            &EligibilitySelector::new(2),
-        )
-        .await
-        .expect("lock skip is not an error");
+        let outcome = run_llm_compaction(&mut session, provider, "m", &EligibilitySelector::new(2))
+            .await
+            .expect("lock skip is not an error");
         assert_eq!(outcome, None);
     }
 }

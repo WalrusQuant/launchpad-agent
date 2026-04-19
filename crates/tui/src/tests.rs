@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 use std::time::Instant;
 
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use lpa_core::{Model, PresetModelCatalog, SessionId};
 use lpa_protocol::ProviderFamily;
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use pretty_assertions::assert_eq;
 use ratatui::{Terminal, backend::TestBackend, layout::Rect};
 
@@ -460,7 +460,8 @@ async fn configure_openrouter_full_flow_reaches_validation() {
     app.handle_preset_selected("openrouter");
 
     // Enter the API key.
-    app.handle_submission("sk-or-v1-testkey".to_string()).unwrap();
+    app.handle_submission("sk-or-v1-testkey".to_string())
+        .unwrap();
     assert!(!app.onboarding_api_key_pending);
     assert!(app.onboarding_custom_model_pending);
     assert_eq!(

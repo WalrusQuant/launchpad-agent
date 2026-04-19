@@ -2,11 +2,11 @@ use std::{collections::HashMap, pin::Pin};
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
+use futures::{Stream, StreamExt};
 use lpa_protocol::{
     ModelRequest, ModelResponse, RequestContent, ResponseContent, ResponseExtra, ResponseMetadata,
     StopReason, StreamEvent, Usage,
 };
-use futures::{Stream, StreamExt};
 use reqwest::Client;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use reqwest_eventsource::{Event, EventSource};

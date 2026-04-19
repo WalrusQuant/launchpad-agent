@@ -81,11 +81,8 @@ async fn request_response_round_trip() {
     let params = json!({"hello": "world"});
     let client_clone = Arc::new(client);
     let client_for_task = Arc::clone(&client_clone);
-    let request_task = tokio::spawn(async move {
-        client_for_task
-            .request::<_, Ok200>("ping", &params)
-            .await
-    });
+    let request_task =
+        tokio::spawn(async move { client_for_task.request::<_, Ok200>("ping", &params).await });
 
     // Wait for the outbound frame to land so we can echo a response for it.
     let frame = tokio::time::timeout(Duration::from_secs(1), async {

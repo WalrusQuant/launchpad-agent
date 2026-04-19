@@ -129,7 +129,12 @@ impl RolloutStore {
         let path = snapshot_store
             .persist(snapshot)
             .map_err(|err| anyhow::anyhow!("{err}"))
-            .with_context(|| format!("write compaction snapshot for session {}", snapshot.session_id))?;
+            .with_context(|| {
+                format!(
+                    "write compaction snapshot for session {}",
+                    snapshot.session_id
+                )
+            })?;
 
         self.append_line(
             &record.rollout_path,

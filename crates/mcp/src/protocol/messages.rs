@@ -80,7 +80,11 @@ pub struct ListToolsResult {
     /// The discovered tool catalog.
     pub tools: Vec<McpToolSpec>,
     /// Optional continuation cursor (unused in v1 — v1 requests without one).
-    #[serde(rename = "nextCursor", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "nextCursor",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub next_cursor: Option<String>,
 }
 

@@ -286,9 +286,8 @@ impl TuiApp {
                     self.onboarding_api_key_pending = false;
                     self.onboarding_custom_model_pending = true;
                     self.onboarding_selected_model = None;
-                    self.onboarding_prompt = Some(format!(
-                        "retry model slug for {label} (Esc to cancel)"
-                    ));
+                    self.onboarding_prompt =
+                        Some(format!("retry model slug for {label} (Esc to cancel)"));
                     self.push_item(
                         TranscriptItemKind::System,
                         "Try a different model",

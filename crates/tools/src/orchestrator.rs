@@ -51,10 +51,7 @@ impl ToolOrchestrator {
         }
     }
 
-    pub fn with_approval_channel(
-        mut self,
-        channel: Arc<dyn crate::ApprovalChannel>,
-    ) -> Self {
+    pub fn with_approval_channel(mut self, channel: Arc<dyn crate::ApprovalChannel>) -> Self {
         self.approval_channel = Some(channel);
         self
     }
@@ -113,7 +110,7 @@ impl ToolOrchestrator {
             warn!(tool = %call.name, "tool not found");
             return ToolCallResult {
                 tool_use_id: call.id.clone(),
-                        output: crate::ToolOutput::error(format!("unknown tool: {}", call.name)),
+                output: crate::ToolOutput::error(format!("unknown tool: {}", call.name)),
             };
         };
 
@@ -201,7 +198,6 @@ impl ToolOrchestrator {
         call: &ToolCall,
         ctx: &ToolContext,
     ) -> ToolCallResult {
-
         info!(tool = %call.name, id = %call.id, "executing tool");
 
         match tool.execute(ctx, call.input.clone()).await {
@@ -402,7 +398,12 @@ mod tests {
         };
         let result = orch.execute_single(&call, &ctx).await;
         assert!(result.output.is_error);
-        assert!(result.output.content.contains("no approval channel available"));
+        assert!(
+            result
+                .output
+                .content
+                .contains("no approval channel available")
+        );
     }
 
     #[tokio::test]

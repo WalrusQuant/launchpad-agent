@@ -2,11 +2,11 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
+use futures::StreamExt;
 use lpa_protocol::{
     ModelRequest, RequestContent, RequestMessage, ResolvedThinkingRequest, ResponseContent,
     ResponseExtra, SamplingControls, StopReason, StreamEvent, UserInput,
 };
-use futures::StreamExt;
 use tokio::time::sleep;
 use tracing::{debug, info, info_span, warn};
 
@@ -829,13 +829,13 @@ mod tests {
 
     use anyhow::Result;
     use async_trait::async_trait;
+    use futures::Stream;
     use lpa_protocol::{
         ModelRequest, ModelResponse, ResponseContent, ResponseExtra, ResponseMetadata, StopReason,
         StreamEvent, Usage,
     };
     use lpa_safety::legacy_permissions::PermissionMode;
     use lpa_tools::{Tool, ToolOrchestrator, ToolOutput, ToolRegistry};
-    use futures::Stream;
     use pretty_assertions::assert_eq;
     use serde_json::json;
 

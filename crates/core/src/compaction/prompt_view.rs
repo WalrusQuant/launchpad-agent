@@ -12,8 +12,7 @@ use crate::ContextSummaryPayload;
 
 /// Header prefixed to the summary message so the model recognizes the block
 /// as compacted context rather than user input.
-pub const COMPACTED_SUMMARY_HEADER: &str =
-    "<compacted_context>\nThe following summary replaces earlier conversation turns that were dropped from the live context window. Treat it as authoritative background.\n";
+pub const COMPACTED_SUMMARY_HEADER: &str = "<compacted_context>\nThe following summary replaces earlier conversation turns that were dropped from the live context window. Treat it as authoritative background.\n";
 
 /// Footer closing the compacted-context block.
 pub const COMPACTED_SUMMARY_FOOTER: &str = "\n</compacted_context>";

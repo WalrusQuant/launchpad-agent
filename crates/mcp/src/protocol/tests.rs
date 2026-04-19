@@ -127,8 +127,7 @@ fn encode_request_produces_canonical_json() {
 
 #[test]
 fn encode_notification_without_params() {
-    let bytes =
-        encode_notification::<()>("notifications/initialized", None).expect("encode");
+    let bytes = encode_notification::<()>("notifications/initialized", None).expect("encode");
     let value: Value = serde_json::from_slice(&bytes).expect("parse");
     assert_eq!(
         value,

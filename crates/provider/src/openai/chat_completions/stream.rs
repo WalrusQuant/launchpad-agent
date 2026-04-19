@@ -1,11 +1,11 @@
 use std::{collections::BTreeMap, pin::Pin};
 
 use anyhow::{Context, Result};
+use futures::{Stream, StreamExt};
 use lpa_protocol::{
     ModelRequest, ModelResponse, ResponseContent, ResponseExtra, ResponseMetadata, StopReason,
     StreamEvent, Usage,
 };
-use futures::{Stream, StreamExt};
 use reqwest_eventsource::{Event, EventSource};
 use serde::Deserialize;
 use serde_json::Value;
@@ -31,12 +31,10 @@ async fn build_stream_error(model: &str, error: reqwest_eventsource::Error) -> a
         reqwest_eventsource::Error::InvalidStatusCode(status, response) => {
             let body = read_body_preview(response).await;
             match body {
-                Some(body) => anyhow::anyhow!(
-                    "openai stream error for model {model}: HTTP {status}: {body}"
-                ),
-                None => anyhow::anyhow!(
-                    "openai stream error for model {model}: HTTP {status}"
-                ),
+                Some(body) => {
+                    anyhow::anyhow!("openai stream error for model {model}: HTTP {status}: {body}")
+                }
+                None => anyhow::anyhow!("openai stream error for model {model}: HTTP {status}"),
             }
         }
         reqwest_eventsource::Error::InvalidContentType(_, response) => {

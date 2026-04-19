@@ -52,8 +52,8 @@ impl StdMcpManager {
             if !record.enabled {
                 continue;
             }
-            let should_start = self.auto_start
-                || matches!(record.startup_policy, McpStartupPolicy::Eager);
+            let should_start =
+                self.auto_start || matches!(record.startup_policy, McpStartupPolicy::Eager);
             if !should_start {
                 continue;
             }
@@ -107,12 +107,12 @@ impl McpManager for StdMcpManager {
     }
 
     async fn refresh(&self, server_id: &McpServerId) -> Result<McpServerStatus, McpError> {
-        let handle = self
-            .handle_for(server_id)
-            .await
-            .ok_or_else(|| McpError::McpServerUnavailable {
-                server_id: server_id.clone(),
-            })?;
+        let handle =
+            self.handle_for(server_id)
+                .await
+                .ok_or_else(|| McpError::McpServerUnavailable {
+                    server_id: server_id.clone(),
+                })?;
         let catalog = handle.refresh().await?;
         Ok(McpServerStatus {
             server_id: server_id.clone(),
@@ -131,15 +131,16 @@ impl McpManager for StdMcpManager {
         tool_name: &str,
         input: Value,
     ) -> Result<Value, McpError> {
-        let handle = self
-            .handle_for(server_id)
-            .await
-            .ok_or_else(|| McpError::McpServerUnavailable {
-                server_id: server_id.clone(),
-            })?;
+        let handle =
+            self.handle_for(server_id)
+                .await
+                .ok_or_else(|| McpError::McpServerUnavailable {
+                    server_id: server_id.clone(),
+                })?;
         let result = handle.invoke_tool(tool_name, input).await?;
         if result.is_error {
-            let message = first_text(&result.content).unwrap_or_else(|| "tool reported is_error".to_owned());
+            let message =
+                first_text(&result.content).unwrap_or_else(|| "tool reported is_error".to_owned());
             return Err(McpError::McpToolInvocationFailed {
                 server_id: server_id.clone(),
                 tool_name: tool_name.to_owned(),
@@ -152,11 +153,7 @@ impl McpManager for StdMcpManager {
         })
     }
 
-    async fn read_resource(
-        &self,
-        server_id: &McpServerId,
-        uri: &str,
-    ) -> Result<Value, McpError> {
+    async fn read_resource(&self, server_id: &McpServerId, uri: &str) -> Result<Value, McpError> {
         let _ = uri;
         Err(McpError::McpResourceReadFailed {
             server_id: server_id.clone(),
@@ -193,9 +190,7 @@ pub async fn snapshot_status(handle: &ServerHandle) -> McpServerStatus {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        McpConfig, McpServerId, McpServerRecord, McpStartupPolicy, McpTransportConfig,
-    };
+    use crate::{McpConfig, McpServerId, McpServerRecord, McpStartupPolicy, McpTransportConfig};
 
     fn fake_record(id: &str) -> McpServerRecord {
         McpServerRecord {
@@ -236,7 +231,11 @@ mod tests {
         };
         let manager = StdMcpManager::from_config(&config).expect("manager");
         let err = manager
-            .invoke_tool(&McpServerId("missing".into()), "ping", serde_json::json!({}))
+            .invoke_tool(
+                &McpServerId("missing".into()),
+                "ping",
+                serde_json::json!({}),
+            )
             .await
             .expect_err("should be unavailable");
         assert!(matches!(err, McpError::McpServerUnavailable { .. }));

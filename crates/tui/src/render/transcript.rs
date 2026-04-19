@@ -116,14 +116,7 @@ fn append_transcript_item(
                 } else {
                     format!("thought ({chars} chars) — /reasoning to show")
                 };
-                append_wrapped_styled_text(
-                    lines,
-                    &label,
-                    "∙ ",
-                    "  ",
-                    inner_width,
-                    theme::dim(),
-                );
+                append_wrapped_styled_text(lines, &label, "∙ ", "  ", inner_width, theme::dim());
             }
         }
         TranscriptItemKind::System if item.title == "Thinking" => {
@@ -190,31 +183,10 @@ fn append_markdown_message(lines: &mut Vec<Line<'static>>, item: &TranscriptItem
     }
 }
 
-fn append_plain_message(
-    lines: &mut Vec<Line<'static>>,
-    item: &TranscriptItem,
-    first_prefix: &'static str,
-    continuation_prefix: &'static str,
-    inner_width: u16,
-) {
-    append_wrapped_styled_text(
-        lines,
-        item.body.trim_end_matches('\n'),
-        first_prefix,
-        continuation_prefix,
-        inner_width,
-        theme::transcript_body(item.kind),
-    );
-}
-
 /// Renders a user message as a slate-backed "bubble" — each wrapped line gets
 /// a consistent slate background across prefix, body, and right-edge padding
 /// so the message reads as a visually distinct block.
-fn append_user_bubble(
-    lines: &mut Vec<Line<'static>>,
-    item: &TranscriptItem,
-    inner_width: u16,
-) {
+fn append_user_bubble(lines: &mut Vec<Line<'static>>, item: &TranscriptItem, inner_width: u16) {
     const FIRST_PREFIX: &str = "❯ ";
     const CONTINUATION_PREFIX: &str = "  ";
 
@@ -299,11 +271,7 @@ fn fold_tool_output(body: &str, max_lines: usize) -> String {
 /// `╭`, `│`, or `╰` is treated as the boxed banner and colored with the
 /// cyan border accent; the ASCII-logo interior is brightened; the `❯`
 /// bullets in quick-start inherit the accent glyph color.
-fn append_welcome_banner(
-    lines: &mut Vec<Line<'static>>,
-    item: &TranscriptItem,
-    _inner_width: u16,
-) {
+fn append_welcome_banner(lines: &mut Vec<Line<'static>>, item: &TranscriptItem, _inner_width: u16) {
     for raw_line in item.body.lines() {
         let line = Line::from(style_welcome_line(raw_line));
         lines.push(line);
@@ -324,7 +292,8 @@ fn style_welcome_line(raw: &str) -> Vec<Span<'static>> {
         // Detect whether the inner content looks like the figlet logo vs
         // plain text (the logo contains `|` or `_` runs at specific places).
         // Simpler: any line that contains `__` or `|_` treats as logo.
-        let is_logo_line = inner.contains("__") || inner.contains("|_") || inner.contains("A G E N T");
+        let is_logo_line =
+            inner.contains("__") || inner.contains("|_") || inner.contains("A G E N T");
         let inner_style = if is_logo_line {
             theme::accent_bright()
         } else {
@@ -400,7 +369,10 @@ fn append_tool_call_title(lines: &mut Vec<Line<'static>>, title: &str, inner_wid
         if index == 0 && !rest.is_empty() && segment_text.starts_with(tool_name) {
             let remainder = segment_text[tool_name.len()..].trim_start().to_string();
             lines.push(Line::from(vec![
-                Span::styled(prefix_text, theme::transcript_prefix(TranscriptItemKind::ToolCall)),
+                Span::styled(
+                    prefix_text,
+                    theme::transcript_prefix(TranscriptItemKind::ToolCall),
+                ),
                 Span::styled(
                     tool_name.to_string(),
                     theme::transcript_title(TranscriptItemKind::ToolCall),
@@ -413,7 +385,10 @@ fn append_tool_call_title(lines: &mut Vec<Line<'static>>, title: &str, inner_wid
             ]));
         } else {
             lines.push(Line::from(vec![
-                Span::styled(prefix_text, theme::transcript_prefix(TranscriptItemKind::ToolCall)),
+                Span::styled(
+                    prefix_text,
+                    theme::transcript_prefix(TranscriptItemKind::ToolCall),
+                ),
                 Span::styled(
                     segment_text,
                     theme::transcript_body(TranscriptItemKind::ToolCall),
@@ -434,7 +409,10 @@ fn append_tool_result(lines: &mut Vec<Line<'static>>, item: &TranscriptItem, inn
 
     if !item.title.is_empty() && item.title != "Tool output" {
         lines.push(Line::from(vec![
-            Span::styled("  └ ", theme::transcript_prefix(TranscriptItemKind::ToolResult)),
+            Span::styled(
+                "  └ ",
+                theme::transcript_prefix(TranscriptItemKind::ToolResult),
+            ),
             Span::styled(
                 item.title.clone(),
                 theme::transcript_title(TranscriptItemKind::ToolResult),

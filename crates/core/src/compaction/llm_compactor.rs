@@ -125,15 +125,15 @@ struct RawSummary {
 }
 
 fn parse_summary(raw: &str, model_slug: &str) -> Result<ContextSummaryPayload, CompactionError> {
-    let json_text = extract_json_object(raw).ok_or_else(|| CompactionError::SummaryProviderFailed {
-        message: "summary response did not contain a JSON object".into(),
-    })?;
+    let json_text =
+        extract_json_object(raw).ok_or_else(|| CompactionError::SummaryProviderFailed {
+            message: "summary response did not contain a JSON object".into(),
+        })?;
 
-    let raw: RawSummary = serde_json::from_str(json_text).map_err(|err| {
-        CompactionError::SummaryProviderFailed {
+    let raw: RawSummary =
+        serde_json::from_str(json_text).map_err(|err| CompactionError::SummaryProviderFailed {
             message: format!("failed to parse summary JSON: {err}"),
-        }
-    })?;
+        })?;
 
     if raw.summary_text.trim().is_empty() {
         return Err(CompactionError::SummaryProviderFailed {
@@ -260,7 +260,9 @@ mod tests {
     async fn compact_rejects_empty_history() {
         let provider = StubProvider::with_response(Ok(text_response("{}")));
         let compactor = LlmContextCompactor::new(provider.clone(), "summary-model");
-        let result = compactor.compact(history(&[]), TokenBudget::default()).await;
+        let result = compactor
+            .compact(history(&[]), TokenBudget::default())
+            .await;
         assert!(matches!(
             result,
             Err(CompactionError::CompactionNotPossible { .. })
@@ -300,7 +302,8 @@ mod tests {
 
     #[tokio::test]
     async fn compact_strips_markdown_fences_around_json() {
-        let body = "```json\n{\"summary_text\":\"ok\",\"preserved_facts\":[],\"open_loops\":[]}\n```";
+        let body =
+            "```json\n{\"summary_text\":\"ok\",\"preserved_facts\":[],\"open_loops\":[]}\n```";
         let provider = StubProvider::with_response(Ok(text_response(body)));
         let compactor = LlmContextCompactor::new(provider, "m");
         let payload = compactor

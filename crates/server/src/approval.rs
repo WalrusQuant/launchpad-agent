@@ -97,7 +97,9 @@ impl ApprovalManager {
     ) -> Result<ResolvedApproval, ()> {
         let pending = self.pending.remove(approval_id).ok_or(())?;
         let approved = matches!(decision, ApprovalDecisionValue::Approve);
-        let _ = pending.responder.send(lpa_tools::ApprovalResult { approved });
+        let _ = pending
+            .responder
+            .send(lpa_tools::ApprovalResult { approved });
         Ok(ResolvedApproval {
             session_id: pending.session_id,
             turn_id: pending.turn_id,

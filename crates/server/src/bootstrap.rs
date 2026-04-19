@@ -60,8 +60,7 @@ pub async fn run_server_process(args: ServerProcessArgs) -> Result<()> {
     // Hold on to the concrete `StdMcpManager` so we can call its eager-start
     // helper (not part of the trait) and the final `shutdown_all`.
     let concrete_mcp_manager = Arc::new(StdMcpManager::from_config(&config.mcp)?);
-    let mcp_manager: Arc<dyn McpManager> = Arc::clone(&concrete_mcp_manager)
-        as Arc<dyn McpManager>;
+    let mcp_manager: Arc<dyn McpManager> = Arc::clone(&concrete_mcp_manager) as Arc<dyn McpManager>;
     if config.mcp.auto_start {
         concrete_mcp_manager.start_configured(&config.mcp).await?;
     }

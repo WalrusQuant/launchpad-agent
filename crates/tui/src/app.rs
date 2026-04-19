@@ -5,10 +5,10 @@ use std::{
 };
 
 use anyhow::Result;
-use lpa_core::PresetModelCatalog;
-use lpa_protocol::ProviderFamily;
 use crossterm::event::{Event, EventStream, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use futures::StreamExt;
+use lpa_core::PresetModelCatalog;
+use lpa_protocol::ProviderFamily;
 use ratatui::layout::{Constraint, Layout, Rect};
 
 use crate::{

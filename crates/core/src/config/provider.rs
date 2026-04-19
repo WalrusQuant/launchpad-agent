@@ -268,10 +268,12 @@ pub(crate) fn resolve_provider_settings_from_config(
     // has no models list, trust the top-level value as-is (that's the
     // pre-onboarding-profile config shape).
     let top_level_model_is_valid = provider_config.models.is_empty()
-        || file
-            .model
-            .as_deref()
-            .is_some_and(|model| provider_config.models.iter().any(|entry| entry.model == model));
+        || file.model.as_deref().is_some_and(|model| {
+            provider_config
+                .models
+                .iter()
+                .any(|entry| entry.model == model)
+        });
     let model = file
         .model
         .clone()

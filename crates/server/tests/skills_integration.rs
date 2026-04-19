@@ -112,9 +112,8 @@ fn build_runtime_with_registry(
         .iter()
         .map(|root| root.join(".lpagent").join("skills"))
         .collect::<Vec<_>>();
-    let mcp_manager: Arc<dyn lpa_mcp::McpManager> = Arc::new(
-        lpa_mcp::StdMcpManager::from_config(&lpa_mcp::McpConfig::default()).unwrap(),
-    );
+    let mcp_manager: Arc<dyn lpa_mcp::McpManager> =
+        Arc::new(lpa_mcp::StdMcpManager::from_config(&lpa_mcp::McpConfig::default()).unwrap());
     ServerRuntime::new(
         data_root.to_path_buf(),
         ServerRuntimeDependencies::new(
@@ -196,8 +195,7 @@ async fn start_session(
         )
         .await
         .context("session/start response")?;
-    let result: SuccessResponse<lpa_server::SessionStartResult> =
-        serde_json::from_value(response)?;
+    let result: SuccessResponse<lpa_server::SessionStartResult> = serde_json::from_value(response)?;
     Ok(result.result.session_id)
 }
 

@@ -14,9 +14,9 @@ use tracing::{debug, error};
 use lpa_mcp::protocol::{CallToolResult, ContentBlock, ToolAnnotations};
 use lpa_mcp::{McpError, McpManager, McpServerId, McpServerStatus, McpToolDescriptor};
 
+use crate::ToolContext;
 use crate::registry::ToolRegistry;
 use crate::tool::{Tool, ToolOutput};
-use crate::ToolContext;
 
 /// Prefix applied to every MCP-exposed tool name to disambiguate from built-ins.
 pub const MCP_TOOL_PREFIX: &str = "mcp__";
@@ -75,7 +75,9 @@ impl Tool for McpToolAdapter {
             .await
         {
             Ok(value) => Ok(flatten_call_tool_result_value(value)),
-            Err(McpError::McpToolInvocationFailed { message, .. }) => Ok(ToolOutput::error(message)),
+            Err(McpError::McpToolInvocationFailed { message, .. }) => {
+                Ok(ToolOutput::error(message))
+            }
             Err(err) => Ok(ToolOutput::error(err.to_string())),
         }
     }
@@ -176,9 +178,7 @@ mod tests {
 
     use async_trait::async_trait;
     use lpa_mcp::protocol::CallToolResult;
-    use lpa_mcp::{
-        McpError, McpManager, McpServerId, McpServerStatus, McpToolDescriptor,
-    };
+    use lpa_mcp::{McpError, McpManager, McpServerId, McpServerStatus, McpToolDescriptor};
     use lpa_safety::legacy_permissions::{PermissionMode, RuleBasedPolicy};
     use serde_json::json;
 
@@ -252,14 +252,22 @@ mod tests {
     async fn adapter_returns_text_blocks_joined() {
         let result = CallToolResult {
             content: vec![
-                ContentBlock::Text { text: "hello".into() },
-                ContentBlock::Text { text: "world".into() },
+                ContentBlock::Text {
+                    text: "hello".into(),
+                },
+                ContentBlock::Text {
+                    text: "world".into(),
+                },
             ],
             is_error: false,
         };
         let manager = MockManager::with_response(Ok(serde_json::to_value(&result).unwrap()));
-        let adapter =
-            McpToolAdapter::new(manager, McpServerId("docs".into()), descriptor("search"), None);
+        let adapter = McpToolAdapter::new(
+            manager,
+            McpServerId("docs".into()),
+            descriptor("search"),
+            None,
+        );
         let out = adapter.execute(&fake_ctx(), json!({})).await.unwrap();
         assert_eq!(out.content, "hello\nworld");
         assert!(!out.is_error);
@@ -268,12 +276,18 @@ mod tests {
     #[tokio::test]
     async fn adapter_preserves_is_error_true_from_result() {
         let result = CallToolResult {
-            content: vec![ContentBlock::Text { text: "boom".into() }],
+            content: vec![ContentBlock::Text {
+                text: "boom".into(),
+            }],
             is_error: true,
         };
         let manager = MockManager::with_response(Ok(serde_json::to_value(&result).unwrap()));
-        let adapter =
-            McpToolAdapter::new(manager, McpServerId("docs".into()), descriptor("search"), None);
+        let adapter = McpToolAdapter::new(
+            manager,
+            McpServerId("docs".into()),
+            descriptor("search"),
+            None,
+        );
         let out = adapter.execute(&fake_ctx(), json!({})).await.unwrap();
         assert_eq!(out.content, "boom");
         assert!(out.is_error);
@@ -282,8 +296,12 @@ mod tests {
     #[tokio::test]
     async fn adapter_namespaces_exposed_name() {
         let manager = MockManager::with_response(Ok(Value::Null));
-        let adapter =
-            McpToolAdapter::new(manager, McpServerId("docs".into()), descriptor("search"), None);
+        let adapter = McpToolAdapter::new(
+            manager,
+            McpServerId("docs".into()),
+            descriptor("search"),
+            None,
+        );
         assert_eq!(adapter.exposed_name(), "mcp__docs__search");
     }
 
@@ -292,8 +310,12 @@ mod tests {
         let manager = MockManager::with_response(Err(McpError::McpServerUnavailable {
             server_id: McpServerId("docs".into()),
         }));
-        let adapter =
-            McpToolAdapter::new(manager, McpServerId("docs".into()), descriptor("search"), None);
+        let adapter = McpToolAdapter::new(
+            manager,
+            McpServerId("docs".into()),
+            descriptor("search"),
+            None,
+        );
         let out = adapter.execute(&fake_ctx(), json!({})).await.unwrap();
         assert!(out.is_error);
     }

@@ -39,10 +39,14 @@ impl SnapshotStore {
     ///
     /// Errors are normalized into [`SnapshotPersistFailure::JsonSnapshotWriteFailed`]
     /// so callers can map directly into [`crate::CompactionError::SnapshotPersistFailed`].
-    pub fn persist(&self, snapshot: &CompactionSnapshot) -> Result<PathBuf, SnapshotPersistFailure> {
+    pub fn persist(
+        &self,
+        snapshot: &CompactionSnapshot,
+    ) -> Result<PathBuf, SnapshotPersistFailure> {
         let path = self.snapshot_path(snapshot.session_id, snapshot.turn_id);
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).map_err(|err| io_failure("create snapshot directory", err))?;
+            fs::create_dir_all(parent)
+                .map_err(|err| io_failure("create snapshot directory", err))?;
         }
         let encoded = serde_json::to_vec_pretty(snapshot).map_err(|err| {
             SnapshotPersistFailure::JsonSnapshotWriteFailed {

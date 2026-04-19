@@ -10,8 +10,7 @@ const SLATE_200: Color = Color::Rgb(213, 219, 227); // primary body text
 const SLATE_300: Color = Color::Rgb(175, 184, 200); // secondary body text
 const SLATE_400: Color = Color::Rgb(138, 148, 163); // muted
 const SLATE_500: Color = Color::Rgb(113, 124, 141); // dim / tree connectors
-const SLATE_600: Color = Color::Rgb(82, 92, 108);   // separators
-const SLATE_700: Color = Color::Rgb(58, 67, 82);    // borders off
+const SLATE_600: Color = Color::Rgb(82, 92, 108); // separators
 // Cyan ramp — the signature accent. Bright for live/active elements, mid
 // for tool-call glyphs, darker for subtle rim highlights on borders.
 pub(super) const CYAN_200: Color = Color::Rgb(165, 231, 241);

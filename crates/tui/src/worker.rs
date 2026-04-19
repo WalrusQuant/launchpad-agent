@@ -14,8 +14,7 @@ use lpa_protocol::{
     ApprovalDecisionValue, ApprovalRespondParams, ApprovalScopeValue, ProviderFamily,
 };
 use lpa_provider::{
-    ModelProviderSDK, anthropic::AnthropicProvider, google::GoogleProvider,
-    openai::OpenAIProvider,
+    ModelProviderSDK, anthropic::AnthropicProvider, google::GoogleProvider, openai::OpenAIProvider,
 };
 use lpa_server::{
     InputItem, ItemEnvelope, ItemEventPayload, ItemKind, ServerEvent, SessionHistoryItem,
@@ -1151,8 +1150,8 @@ fn build_validation_provider(
         }
         ProviderFamily::Google { .. } => {
             let api_key = api_key.context("google provider requires an API key")?;
-            let base_url = base_url
-                .unwrap_or_else(|| "https://generativelanguage.googleapis.com".to_string());
+            let base_url =
+                base_url.unwrap_or_else(|| "https://generativelanguage.googleapis.com".to_string());
             Ok(std::sync::Arc::new(
                 GoogleProvider::new(base_url).with_api_key(api_key),
             ))

@@ -287,9 +287,7 @@ fn current_provider_id(
                                 wire_api == "openai_chat_completions"
                                     || wire_api == "openai_responses"
                             }
-                            ProviderFamily::Google { .. } => {
-                                wire_api == "google_generate_content"
-                            }
+                            ProviderFamily::Google { .. } => wire_api == "google_generate_content",
                         };
                         matches_provider.then(|| provider_id.clone())
                     })

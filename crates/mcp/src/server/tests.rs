@@ -11,9 +11,7 @@ use pretty_assertions::assert_eq;
 use serde_json::json;
 
 use crate::server::ServerSupervisor;
-use crate::{
-    McpServerId, McpServerRecord, McpStartupPolicy, McpStartupState, McpTransportConfig,
-};
+use crate::{McpServerId, McpServerRecord, McpStartupPolicy, McpStartupState, McpTransportConfig};
 
 /// Echo script that implements a minimal MCP handshake + `tools/list` + `tools/call`.
 const HANDSHAKE_SCRIPT: &str = r#"
@@ -190,8 +188,7 @@ async fn invoke_tool_before_ready_returns_unavailable_after_cap() {
         .expect_err("should fail");
     assert!(matches!(
         err,
-        crate::McpError::McpServerUnavailable { .. }
-            | crate::McpError::McpStartupFailed { .. }
+        crate::McpError::McpServerUnavailable { .. } | crate::McpError::McpStartupFailed { .. }
     ));
     handle.shutdown();
 }

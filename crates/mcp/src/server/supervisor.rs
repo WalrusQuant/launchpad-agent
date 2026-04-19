@@ -19,9 +19,7 @@ use crate::protocol::{
     MCP_PROTOCOL_VERSION,
 };
 use crate::transport::{StdioTransport, Transport};
-use crate::{
-    McpError, McpServerRecord, McpStartupState, McpToolDescriptor, McpTransportConfig,
-};
+use crate::{McpError, McpServerRecord, McpStartupState, McpToolDescriptor, McpTransportConfig};
 
 use super::catalog::ServerCatalog;
 use super::handle::{ServerHandle, SupervisorCmd};
@@ -163,12 +161,13 @@ impl ServerSupervisor {
     fn build_transport(&self) -> Result<Arc<dyn Transport>, McpError> {
         match &self.record.transport {
             McpTransportConfig::Stdio { command, cwd, env } => {
-                let transport = StdioTransport::spawn(command, cwd.as_deref(), env).map_err(
-                    |err| McpError::McpStartupFailed {
-                        server_id: self.record.id.clone(),
-                        message: format!("stdio spawn failed: {err}"),
-                    },
-                )?;
+                let transport =
+                    StdioTransport::spawn(command, cwd.as_deref(), env).map_err(|err| {
+                        McpError::McpStartupFailed {
+                            server_id: self.record.id.clone(),
+                            message: format!("stdio spawn failed: {err}"),
+                        }
+                    })?;
                 Ok(Arc::new(transport))
             }
             McpTransportConfig::StreamableHttp { .. } => Err(McpError::McpStartupFailed {
@@ -296,4 +295,3 @@ fn backoff_for_attempt(attempt: u32) -> Duration {
         _ => BASE_BACKOFF * 16,
     }
 }
-

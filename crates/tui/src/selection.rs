@@ -584,6 +584,7 @@ impl TuiApp {
         )
     }
 
+    #[cfg(test)]
     pub(crate) fn is_preset_picker_open(&self) -> bool {
         matches!(
             self.aux_panel.as_ref().map(|panel| &panel.content),
@@ -772,8 +773,7 @@ impl TuiApp {
                     // If we already have a key saved for this preset's base
                     // URL, pre-populate it so an empty input reuses the key
                     // instead of wiping it.
-                    let existing_key =
-                        self.existing_api_key_for_preset(preset.default_base_url);
+                    let existing_key = self.existing_api_key_for_preset(preset.default_base_url);
                     self.onboarding_selected_api_key = existing_key.clone();
 
                     let env_var_hint = preset.api_key_env_vars.first();
@@ -786,10 +786,9 @@ impl TuiApp {
                             "{} API key — Enter to keep saved, or paste new",
                             preset.display_name
                         ),
-                        (false, Some(var)) => format!(
-                            "{} API key (also read from ${var})",
-                            preset.display_name
-                        ),
+                        (false, Some(var)) => {
+                            format!("{} API key (also read from ${var})", preset.display_name)
+                        }
                         (false, None) => format!("{} API key", preset.display_name),
                     };
                     self.onboarding_prompt = Some(prompt);
@@ -1052,8 +1051,12 @@ impl TuiApp {
         // Persist the choice first, then reconfigure the worker so the live session
         // immediately reflects the onboarding selection.
         save_onboarding_config(provider, &model, base_url.as_deref(), api_key.as_deref())?;
-        self.worker
-            .reconfigure_provider(wire_api, model.clone(), base_url.clone(), api_key.clone())?;
+        self.worker.reconfigure_provider(
+            wire_api,
+            model.clone(),
+            base_url.clone(),
+            api_key.clone(),
+        )?;
         self.provider = provider;
         self.model = model.clone();
 
@@ -1119,14 +1122,9 @@ fn read_redacted_config_toml() -> Result<String> {
                 if let Some(eq_idx) = trimmed.find('=') {
                     let key_part = &trimmed[..=eq_idx];
                     let value_part = trimmed[eq_idx + 1..].trim();
-                    let unquoted = value_part
-                        .trim_start_matches('"')
-                        .trim_end_matches('"');
+                    let unquoted = value_part.trim_start_matches('"').trim_end_matches('"');
                     let masked_value = if unquoted.len() > 4 {
-                        format!(
-                            "\"***{}\"",
-                            &unquoted[unquoted.len().saturating_sub(4)..]
-                        )
+                        format!("\"***{}\"", &unquoted[unquoted.len().saturating_sub(4)..])
                     } else {
                         "\"****\"".to_string()
                     };

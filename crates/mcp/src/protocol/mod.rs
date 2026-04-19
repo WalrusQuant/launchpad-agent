@@ -15,9 +15,9 @@ pub use jsonrpc::{
     parse_message,
 };
 pub use messages::{
-    CallToolParams, CallToolResult, ClientCapabilities, ClientInfo, ContentBlock,
-    InitializeParams, InitializeResult, ListToolsResult, MCP_PROTOCOL_VERSION, McpToolSpec,
-    ServerInfo, ToolAnnotations,
+    CallToolParams, CallToolResult, ClientCapabilities, ClientInfo, ContentBlock, InitializeParams,
+    InitializeResult, ListToolsResult, MCP_PROTOCOL_VERSION, McpToolSpec, ServerInfo,
+    ToolAnnotations,
 };
 
 #[cfg(test)]

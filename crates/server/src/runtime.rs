@@ -20,15 +20,16 @@ use lpa_tools::ToolOrchestrator;
 
 use crate::{
     ApprovalRequestPayload, ClientTransportKind, ConnectionState, ErrorResponse, EventContext,
-    EventsSubscribeParams, EventsSubscribeResult, InitializeParams, InitializeResult, ItemDeltaKind,
-    ItemDeltaPayload, ItemEnvelope, ItemEventPayload, ItemKind, NotificationEnvelope,
-    PendingServerRequestContext, ProtocolError, ProtocolErrorCode, ServerCapabilities, ServerEvent,
-    ServerRequestKind, ServerRequestResolvedPayload, SessionEventPayload, SessionForkParams,
-    SessionForkResult, SessionListParams, SessionListResult, SessionResumeParams,
-    SessionResumeResult, SessionRuntimeStatus, SessionStartParams, SessionStartResult,
-    SessionStatusChangedPayload, SessionTitleUpdateParams, SessionTitleUpdateResult,
-    SuccessResponse, TurnEventPayload, TurnInterruptParams, TurnInterruptResult, TurnStartParams,
-    TurnStartResult, TurnSteerParams, TurnSteerResult, TurnSummary, TurnUsageUpdatedPayload,
+    EventsSubscribeParams, EventsSubscribeResult, InitializeParams, InitializeResult,
+    ItemDeltaKind, ItemDeltaPayload, ItemEnvelope, ItemEventPayload, ItemKind,
+    NotificationEnvelope, PendingServerRequestContext, ProtocolError, ProtocolErrorCode,
+    ServerCapabilities, ServerEvent, ServerRequestKind, ServerRequestResolvedPayload,
+    SessionEventPayload, SessionForkParams, SessionForkResult, SessionListParams,
+    SessionListResult, SessionResumeParams, SessionResumeResult, SessionRuntimeStatus,
+    SessionStartParams, SessionStartResult, SessionStatusChangedPayload, SessionTitleUpdateParams,
+    SessionTitleUpdateResult, SuccessResponse, TurnEventPayload, TurnInterruptParams,
+    TurnInterruptResult, TurnStartParams, TurnStartResult, TurnSteerParams, TurnSteerResult,
+    TurnSummary, TurnUsageUpdatedPayload,
     approval::{ApprovalManager, ApprovalRespondParams, SharedApprovalManager},
     execution::{RuntimeSession, ServerRuntimeDependencies},
     persistence::{RolloutStore, build_item_record, build_turn_record},
@@ -177,9 +178,7 @@ impl ServerRuntime {
             "turn/start" => Some(self.handle_turn_start(id?, params).await),
             "turn/interrupt" => Some(self.handle_turn_interrupt(id?, params).await),
             "turn/steer" => Some(self.handle_turn_steer(connection_id, id?, params).await),
-            "approval/respond" => {
-                Some(self.handle_approval_respond(id?, params).await)
-            }
+            "approval/respond" => Some(self.handle_approval_respond(id?, params).await),
             "events/subscribe" => Some(
                 self.handle_events_subscribe(connection_id, id?, params)
                     .await,
@@ -1098,11 +1097,11 @@ impl ServerRuntime {
             }
         };
 
-        let resolved = self
-            .approval_manager
-            .lock()
-            .await
-            .respond(&params.approval_id, params.decision.clone(), params.scope.clone());
+        let resolved = self.approval_manager.lock().await.respond(
+            &params.approval_id,
+            params.decision.clone(),
+            params.scope.clone(),
+        );
 
         match resolved {
             Ok(approval) => {
@@ -1122,8 +1121,12 @@ impl ServerRuntime {
                         crate::ApprovalScopeValue::Session | crate::ApprovalScopeValue::Tool
                     )
                 {
-                    let cache_arc = if let Some(session_arc) =
-                        self.sessions.lock().await.get(&approval.session_id).cloned()
+                    let cache_arc = if let Some(session_arc) = self
+                        .sessions
+                        .lock()
+                        .await
+                        .get(&approval.session_id)
+                        .cloned()
                     {
                         let session = session_arc.lock().await;
                         Some(Arc::clone(&session.approval_cache))
@@ -1152,13 +1155,11 @@ impl ServerRuntime {
                     approval.session_id,
                     approval.turn_id,
                     ItemKind::ApprovalDecision,
-                    TurnItem::ApprovalDecision(
-                        ApprovalDecisionItem {
-                            approval_id: params.approval_id.to_string(),
-                            decision: decision_str.to_string(),
-                            scope: scope_str.to_string(),
-                        },
-                    ),
+                    TurnItem::ApprovalDecision(ApprovalDecisionItem {
+                        approval_id: params.approval_id.to_string(),
+                        decision: decision_str.to_string(),
+                        scope: scope_str.to_string(),
+                    }),
                     serde_json::json!({
                         "approval_id": params.approval_id,
                         "decision": decision_str,
@@ -1445,15 +1446,13 @@ impl ServerRuntime {
                         justification,
                     } => {
                         let approval_id_smol: smol_str::SmolStr = approval_id.clone().into();
-                        let request_context =
-                            PendingServerRequestContext {
-                                request_id: approval_id_smol.clone(),
-                                request_kind:
-                                    ServerRequestKind::ItemPermissionsRequestApproval,
-                                session_id,
-                                turn_id: Some(turn_for_events.turn_id),
-                                item_id: None,
-                            };
+                        let request_context = PendingServerRequestContext {
+                            request_id: approval_id_smol.clone(),
+                            request_kind: ServerRequestKind::ItemPermissionsRequestApproval,
+                            session_id,
+                            turn_id: Some(turn_for_events.turn_id),
+                            item_id: None,
+                        };
                         let payload = ApprovalRequestPayload {
                             request: request_context,
                             approval_id: approval_id_smol,
@@ -1465,13 +1464,11 @@ impl ServerRuntime {
                                 session_id,
                                 turn_for_events.turn_id,
                                 ItemKind::ApprovalRequest,
-                                TurnItem::ApprovalRequest(
-                                    ApprovalRequestItem {
-                                        approval_id,
-                                        action_summary,
-                                        justification,
-                                    },
-                                ),
+                                TurnItem::ApprovalRequest(ApprovalRequestItem {
+                                    approval_id,
+                                    action_summary,
+                                    justification,
+                                }),
                                 serde_json::to_value(&payload).unwrap_or_default(),
                             )
                             .await;
@@ -1504,9 +1501,7 @@ impl ServerRuntime {
                                 item_id,
                                 item_seq,
                                 ItemKind::ContextCompaction,
-                                TurnItem::ContextCompaction(TextItem {
-                                    text: summary_text,
-                                }),
+                                TurnItem::ContextCompaction(TextItem { text: summary_text }),
                                 payload_value,
                             )
                             .await;

@@ -39,18 +39,14 @@ impl ApprovalChannel for ServerApprovalChannel {
         action_summary: String,
         justification: String,
     ) -> oneshot::Receiver<ApprovalResult> {
-        let rx = self
-            .approval_manager
-            .lock()
-            .await
-            .register(
-                approval_id.clone(),
-                self.session_id,
-                self.turn_id,
-                tool_name,
-                action_summary.clone(),
-                justification.clone(),
-            );
+        let rx = self.approval_manager.lock().await.register(
+            approval_id.clone(),
+            self.session_id,
+            self.turn_id,
+            tool_name,
+            action_summary.clone(),
+            justification.clone(),
+        );
 
         let _ = self.event_tx.send(QueryEvent::ApprovalRequest {
             approval_id: approval_id.to_string(),
