@@ -1,0 +1,36 @@
+[package]
+name = "lpa-cli"
+description = "CLI entry point that assembles all crates"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "lpagent"
+path = "src/main.rs"
+
+[dependencies]
+lpa-core = { workspace = true }
+lpa-tools = { workspace = true }
+lpa-provider = { workspace = true }
+lpa-protocol = { workspace = true }
+lpa-safety = { workspace = true }
+lpa-tasks = { workspace = true }
+lpa-utils = { workspace = true }
+lpa-server = { workspace = true }
+lpa-tui = { workspace = true }
+
+tokio = { workspace = true }
+futures = { workspace = true }
+async-trait = { workspace = true }
+clap = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+serde = { workspace = true }
+colored = { workspace = true }
+
+[dev-dependencies]
+pretty_assertions = "1"

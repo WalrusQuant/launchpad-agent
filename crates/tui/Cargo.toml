@@ -1,0 +1,40 @@
+[package]
+name = "lpa-tui"
+description = "Interactive terminal UI for Launchpad Agent"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "lpa_tui"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+lpa-core = { workspace = true }
+lpa-utils = { workspace = true }
+lpa-server = { workspace = true }
+lpa-provider = { workspace = true }
+lpa-protocol = { workspace = true }
+smol_str = { workspace = true }
+crossterm = { workspace = true }
+futures = { workspace = true }
+ratatui = { workspace = true }
+toml = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tokio-stream = { workspace = true }
+tracing = { workspace = true }
+unicode-width = { workspace = true }
+textwrap = { workspace = true }
+pulldown-cmark = { workspace = true }
+dirs = { workspace = true }
+regex = { workspace = true }
+url = "2"
+urlencoding = "2"
+syntect = "5"
+two-face = { version = "0.5", default-features = false, features = ["syntect-default-onig"] }
+
+[dev-dependencies]
+chrono = { workspace = true }
+pretty_assertions = "1"
