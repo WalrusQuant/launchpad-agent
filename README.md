@@ -185,7 +185,3 @@ Open an issue or submit a PR.
 ## License
 
 Licensed under the [Apache License, Version 2.0](./LICENSE).
-
-This project is a fork of [ClawCR](https://github.com/wangtsiao/ClawCodeRust) by
-wangtsiao, originally released under the MIT License. See [NOTICE](./NOTICE) for
-full attribution.
