@@ -300,12 +300,11 @@ impl ModelProviderSDK for AnthropicProvider {
                                 {
                                     message_id = id.to_string();
                                 }
-                                if let Some(usage) = data.get("usage") {
-                                    if let Some(input) =
+                                if let Some(usage) = data.get("usage")
+                                    && let Some(input) =
                                         usage.get("input_tokens").and_then(Value::as_u64)
-                                    {
-                                        input_tokens = input as usize;
-                                    }
+                                {
+                                    input_tokens = input as usize;
                                 }
                             }
                             "content_block_start" => {
@@ -424,23 +423,20 @@ impl ModelProviderSDK for AnthropicProvider {
                             }
                             "content_block_stop" => {
                                 let index = data.get("index").and_then(Value::as_u64).unwrap_or(0) as usize;
-                                if let Some(json_str) = tool_json.remove(&index) {
-                                    if let Ok(parsed) = serde_json::from_str(&json_str) {
-                                        if let Some(ResponseContent::ToolUse { input, .. }) =
-                                            content_blocks.get_mut(&index)
-                                        {
-                                            *input = parsed;
-                                        }
-                                    }
+                                if let Some(json_str) = tool_json.remove(&index)
+                                    && let Ok(parsed) = serde_json::from_str::<Value>(&json_str)
+                                    && let Some(ResponseContent::ToolUse { input, .. }) =
+                                        content_blocks.get_mut(&index)
+                                {
+                                    *input = parsed;
                                 }
                             }
                             "message_delta" => {
-                                if let Some(delta) = data.get("delta").and_then(Value::as_object) {
-                                    if let Some(reason) =
+                                if let Some(delta) = data.get("delta").and_then(Value::as_object)
+                                    && let Some(reason) =
                                         delta.get("stop_reason").and_then(Value::as_str)
-                                    {
-                                        stop_reason = Some(parse_stop_reason(reason));
-                                    }
+                                {
+                                    stop_reason = Some(parse_stop_reason(reason));
                                 }
                                 if let Some(usage) = data.get("usage") {
                                     if let Some(output) = usage.get("output_tokens").and_then(Value::as_u64)
@@ -713,6 +709,7 @@ fn build_request(request: &ModelRequest, stream: bool) -> Value {
 ///   `stop_details`, `stop_sequence`, `type`, server-tool result blocks,
 ///   thinking blocks, citations, and the richer usage breakdown are not
 ///   currently projected into `ModelResponse`.
+///
 /// -------------------------- Below is an example -------------------------
 /// ```json
 /// {

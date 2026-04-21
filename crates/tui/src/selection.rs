@@ -111,13 +111,12 @@ impl TuiApp {
         // URL first — that's the most specific signal.
         if let Some(saved) = self.saved_model_entry(&self.model)
             && let Some(base_url) = saved.base_url.as_deref()
-        {
-            if let Some(preset) = lpa_core::all_presets().iter().find(|p| {
+            && let Some(preset) = lpa_core::all_presets().iter().find(|p| {
                 p.default_base_url
                     .is_some_and(|default| base_url.starts_with(default))
-            }) {
-                return Some(preset.id.to_string());
-            }
+            })
+        {
+            return Some(preset.id.to_string());
         }
 
         // Fall back to the provider family. For non-first-party providers,
@@ -659,6 +658,7 @@ impl TuiApp {
         self.onboarding_selected_model_is_custom = false;
         self.onboarding_selected_base_url = None;
         self.onboarding_selected_api_key = None;
+        self.pending_validation_retry = None;
         self.input.clear();
         self.status_message = "Configuration dismissed".to_string();
     }
@@ -705,7 +705,7 @@ impl TuiApp {
             .unwrap_or_else(|| "(default)".to_string());
         let api_key = saved
             .and_then(|s| s.api_key.as_deref())
-            .map(|k| super::worker_events::mask_with_suffix(k))
+            .map(super::worker_events::mask_with_suffix)
             .unwrap_or_else(|| "(not set)".to_string());
         format!(
             "Provider: {provider_label}\nModel:    {}\nBase URL: {base_url}\nAPI key:  {api_key}",

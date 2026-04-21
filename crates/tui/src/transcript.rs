@@ -238,8 +238,7 @@ fn format_block(title: &str, body: &str, width: u16, prefix: Option<&str>) -> St
     }
 
     let prefix = prefix.unwrap_or("");
-    let continuation_prefix = if prefix.is_empty() { "  " } else { "  " };
-    append_wrapped_body(&mut out, body, width, prefix, continuation_prefix, None);
+    append_wrapped_body(&mut out, body, width, prefix, "  ", None);
     out
 }
 

@@ -138,16 +138,16 @@ impl ModelProviderSDK for GoogleProvider {
                                 "failed to parse google stream payload: {error}"
                             ))?;
 
-                        if let Some(id) = data.get("responseId").and_then(Value::as_str) {
-                            if response_id.is_empty() {
-                                response_id = id.to_string();
-                            }
+                        if let Some(id) = data.get("responseId").and_then(Value::as_str)
+                            && response_id.is_empty()
+                        {
+                            response_id = id.to_string();
                         }
 
                         if let Some(candidates) =
                             data.get("candidates").and_then(Value::as_array)
+                            && let Some(candidate) = candidates.first()
                         {
-                            if let Some(candidate) = candidates.first() {
                                 if let Some(finish) =
                                     candidate.get("finishReason").and_then(Value::as_str)
                                 {
@@ -232,7 +232,6 @@ impl ModelProviderSDK for GoogleProvider {
                                         }
                                     }
                                 }
-                            }
                         }
 
                         if let Some(meta) = data.get("usageMetadata") {
@@ -342,10 +341,10 @@ fn build_request(request: &ModelRequest) -> Value {
         body["tools"] = json!([{"functionDeclarations": declarations}]);
     }
 
-    if let Some(thinking) = &request.thinking {
-        if let Some(budget) = build_thinking_budget(thinking) {
-            body["generationConfig"]["thinkingConfig"] = json!({"thinkingBudget": budget});
-        }
+    if let Some(thinking) = &request.thinking
+        && let Some(budget) = build_thinking_budget(thinking)
+    {
+        body["generationConfig"]["thinkingConfig"] = json!({"thinkingBudget": budget});
     }
 
     merge_extra_body(&mut body, request.extra_body.as_ref());
@@ -382,10 +381,10 @@ fn build_part(block: &RequestContent) -> Value {
                     "response": response,
                 }
             });
-            if *is_error == Some(true) {
-                if let Some(resp) = part["functionResponse"]["response"].as_object_mut() {
-                    resp.insert("_error".to_string(), json!(true));
-                }
+            if *is_error == Some(true)
+                && let Some(resp) = part["functionResponse"]["response"].as_object_mut()
+            {
+                resp.insert("_error".to_string(), json!(true));
             }
             part
         }
@@ -397,46 +396,46 @@ fn parse_response(value: Value) -> Result<ModelResponse> {
     let mut metadata = ResponseMetadata::default();
     let mut stop_reason = None;
 
-    if let Some(candidates) = value.get("candidates").and_then(Value::as_array) {
-        if let Some(candidate) = candidates.first() {
-            if let Some(finish) = candidate.get("finishReason").and_then(Value::as_str) {
-                stop_reason = Some(parse_finish_reason(finish));
-            }
+    if let Some(candidates) = value.get("candidates").and_then(Value::as_array)
+        && let Some(candidate) = candidates.first()
+    {
+        if let Some(finish) = candidate.get("finishReason").and_then(Value::as_str) {
+            stop_reason = Some(parse_finish_reason(finish));
+        }
 
-            if let Some(parts) = candidate
-                .get("content")
-                .and_then(|c| c.get("parts"))
-                .and_then(Value::as_array)
-            {
-                for part in parts {
-                    let is_thought = part
-                        .get("thought")
-                        .and_then(Value::as_bool)
-                        .unwrap_or(false);
+        if let Some(parts) = candidate
+            .get("content")
+            .and_then(|c| c.get("parts"))
+            .and_then(Value::as_array)
+        {
+            for part in parts {
+                let is_thought = part
+                    .get("thought")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
 
-                    if let Some(text) = part.get("text").and_then(Value::as_str) {
-                        if is_thought {
-                            if !text.is_empty() {
-                                metadata.extras.push(ResponseExtra::ReasoningText {
-                                    text: text.to_string(),
-                                });
-                            }
-                        } else {
-                            content.push(ResponseContent::Text(text.to_string()));
+                if let Some(text) = part.get("text").and_then(Value::as_str) {
+                    if is_thought {
+                        if !text.is_empty() {
+                            metadata.extras.push(ResponseExtra::ReasoningText {
+                                text: text.to_string(),
+                            });
                         }
-                    } else if let Some(fc) = part.get("functionCall") {
-                        let name = fc
-                            .get("name")
-                            .and_then(Value::as_str)
-                            .unwrap_or_default()
-                            .to_string();
-                        let args = fc.get("args").cloned().unwrap_or_else(|| json!({}));
-                        content.push(ResponseContent::ToolUse {
-                            id: name.clone(),
-                            name,
-                            input: args,
-                        });
+                    } else {
+                        content.push(ResponseContent::Text(text.to_string()));
                     }
+                } else if let Some(fc) = part.get("functionCall") {
+                    let name = fc
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_string();
+                    let args = fc.get("args").cloned().unwrap_or_else(|| json!({}));
+                    content.push(ResponseContent::ToolUse {
+                        id: name.clone(),
+                        name,
+                        input: args,
+                    });
                 }
             }
         }

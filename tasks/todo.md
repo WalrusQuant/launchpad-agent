@@ -54,10 +54,14 @@ Target: **drop-in flow** where a user picks "OpenRouter" from a preset list, ent
 
 ## Phase C — Connection validation
 
-- [ ] `crates/tui/src/worker.rs` — extend `validate_provider` / `validate_provider_connection` to take the full config tuple and return structured `ProviderValidationOutcome { success, message, models_available: Option<Vec<String>> }`
-- [ ] `crates/tui/src/selection.rs` — add `Validating` step; show spinner; on success transition to `Done` + save; on failure show retry/skip prompt
-- [ ] Fall back: "skip validation and save anyway" option, for local/stub endpoints
-- [ ] Test: `validation_failure_allows_retry_without_losing_input`
+**Shipped 2026-04-21 as a trimmed version.** The `ProviderValidationOutcome` struct and `Validating` step enum were dropped as dead weight (nothing produced `models_available`, and onboarding state is still tracked via booleans rather than an enum — a bigger refactor than the user benefit justifies). The failure-retry UX gap is closed.
+
+- [x] Retry decision panel on validation failure — R/S/C/Esc intercept in `handle_key` mirrors the `pending_approval` pattern
+- [x] `pending_validation_retry: Option<PendingValidationRetry>` on `TuiApp`; `onboarding_selected_*` preserved across the decision
+- [x] Skip-and-save path → `finish_onboarding_selection()` with a transcript warning
+- [x] Change path re-prompts for model (preset flow) or API key (legacy flow)
+- [x] Test: `validation_failure_allows_retry_without_losing_input`
+- [x] Plus: `validation_failure_enters_retry_state`, `validation_skip_pushes_save_without_probe_notice`, `validation_change_reprompts_for_model_in_preset_flow`
 
 ## Phase D — Current config summary card
 

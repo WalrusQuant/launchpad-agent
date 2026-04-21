@@ -265,7 +265,7 @@ fn load_prompt_md(cwd: &std::path::Path) -> Option<String> {
 fn build_system_prompt(base_instructions: &str) -> String {
     let mut sections = Vec::new();
     if !base_instructions.is_empty() {
-        sections.push(format!("{}", base_instructions.to_string()));
+        sections.push(base_instructions.to_string());
     }
     sections.join("\n\n")
 }
@@ -337,8 +337,8 @@ fn append_prefetched_user_inputs(messages: &mut Vec<RequestMessage>, user_inputs
 const MAX_RETRIES: usize = 5;
 const INITIAL_RETRY_BACKOFF_MS: u64 = 250;
 
-/// TODO: The body of `query` is too lengthy, we should move out `stream lop` out, I am
-/// not sure whether we should do this.
+// TODO: The body of `query` is too lengthy, we should move out `stream loop`
+// out. Not sure whether we should do this.
 
 /// The recursive agent loop — the beating heart of the runtime.
 ///

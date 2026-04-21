@@ -61,6 +61,7 @@ impl TuiApp {
             inline_assistant_header_emitted: false,
             pending_inline_history: Vec::new(),
             pending_approval: None,
+            pending_validation_retry: None,
         };
 
         if let Err(error) = app.validate_model_provider_selection(app.provider, &app.model) {
@@ -272,6 +273,36 @@ impl TuiApp {
                 }
                 KeyCode::Esc => {
                     self.submit_pending_approval(lpa_protocol::ApprovalDecisionValue::Cancel);
+                    return;
+                }
+                _ => {}
+            }
+        }
+        // If a validation-failure retry is pending and the composer is empty,
+        // r/s/c/Esc drive the decision. Same composer rule as approvals: if
+        // the user has typed something, don't hijack their input.
+        if self.pending_validation_retry.is_some() && self.input.is_blank() {
+            match key.code {
+                KeyCode::Char('r') | KeyCode::Char('R') => {
+                    self.retry_validation();
+                    return;
+                }
+                KeyCode::Char('s') | KeyCode::Char('S') => {
+                    self.skip_validation_and_save();
+                    return;
+                }
+                KeyCode::Char('c') | KeyCode::Char('C') => {
+                    self.change_validation_inputs();
+                    return;
+                }
+                KeyCode::Esc => {
+                    self.push_item(
+                        TranscriptItemKind::System,
+                        "Configure",
+                        "Onboarding cancelled.".to_string(),
+                    );
+                    self.pending_validation_retry = None;
+                    self.exit_onboarding();
                     return;
                 }
                 _ => {}
@@ -551,6 +582,71 @@ impl TuiApp {
         self.status_message = format!("Approval {outcome}");
     }
 
+    /// Re-runs the connection probe with the same inputs that failed last time.
+    /// Surfaces the worker error (if dispatch itself fails) to the transcript.
+    pub(crate) fn retry_validation(&mut self) {
+        if self.pending_validation_retry.take().is_none() {
+            return;
+        }
+        self.input.clear();
+        if let Err(error) = self.begin_onboarding_validation() {
+            self.push_item(
+                TranscriptItemKind::Error,
+                "Validation failed",
+                error.to_string(),
+            );
+            self.status_message = format!("Validation retry failed: {error}");
+        }
+    }
+
+    /// Persists the pending onboarding inputs without re-running the probe.
+    /// Used when a user knows the endpoint is reachable despite a failed probe
+    /// (for example a local Ollama that doesn't accept the default test payload).
+    pub(crate) fn skip_validation_and_save(&mut self) {
+        if self.pending_validation_retry.take().is_none() {
+            return;
+        }
+        self.input.clear();
+        self.push_item(
+            TranscriptItemKind::System,
+            "Configure",
+            "Saving without validation. If requests fail later, re-run \
+             /configure to change the provider settings."
+                .to_string(),
+        );
+        if let Err(error) = self.finish_onboarding_selection() {
+            self.push_item(
+                TranscriptItemKind::Error,
+                "Onboarding failed",
+                error.to_string(),
+            );
+            self.status_message = "Failed to save onboarding settings".to_string();
+        }
+    }
+
+    /// Returns the onboarding flow to input entry after a failure. Preset flows
+    /// re-prompt for a model slug (the API key already reached the server);
+    /// legacy custom flows re-prompt for the API key.
+    pub(crate) fn change_validation_inputs(&mut self) {
+        if self.pending_validation_retry.take().is_none() {
+            return;
+        }
+        self.input.clear();
+        if let Some(preset_id) = self.onboarding_preset_id.clone() {
+            let label = lpa_core::preset_by_id(&preset_id)
+                .map(|p| p.display_name.to_string())
+                .unwrap_or(preset_id);
+            self.onboarding_custom_model_pending = true;
+            self.onboarding_selected_model = None;
+            self.onboarding_prompt = Some(format!("model slug for {label}"));
+            self.status_message = format!("Enter a different model slug for {label}");
+        } else {
+            self.onboarding_api_key_pending = true;
+            self.onboarding_prompt = Some("api key".to_string());
+            self.status_message = "Enter a different API key".to_string();
+        }
+    }
+
     pub(crate) fn handle_submission(&mut self, prompt: String) -> Result<()> {
         // Onboarding states consume input locally; only normal prompts reach the worker.
         if self.onboarding_custom_model_pending {
@@ -583,8 +679,9 @@ impl TuiApp {
 
         if self.onboarding_base_url_pending {
             let base_url = prompt.trim();
-            if !base_url.is_empty()
-                && !(base_url.starts_with("http://") || base_url.starts_with("https://"))
+            if !(base_url.is_empty()
+                || base_url.starts_with("http://")
+                || base_url.starts_with("https://"))
             {
                 self.status_message = "Base URL must start with http:// or https://".to_string();
                 self.onboarding_prompt = Some("base url".to_string());
@@ -633,7 +730,7 @@ impl TuiApp {
                 self.onboarding_selected_api_key
                     .as_deref()
                     .map(super::worker_events::mask_secret)
-                    .unwrap_or_else(String::new)
+                    .unwrap_or_default()
             ));
 
             // Preset-driven flow: model slug still needs to be entered.

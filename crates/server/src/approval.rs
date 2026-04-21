@@ -88,7 +88,9 @@ impl ApprovalManager {
     /// the result through the oneshot channel.
     ///
     /// Returns `Ok(ResolvedApproval)` if the approval was found and resolved,
-    /// or `Err(())` if no pending approval with that ID exists.
+    /// or `Err(())` if no pending approval with that ID exists. The only
+    /// failure mode is "not found" — callers don't need a richer error type.
+    #[allow(clippy::result_unit_err)]
     pub fn respond(
         &mut self,
         approval_id: &SmolStr,

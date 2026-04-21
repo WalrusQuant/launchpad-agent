@@ -72,6 +72,7 @@ fn test_app() -> TuiApp {
         inline_assistant_header_emitted: false,
         pending_inline_history: Vec::new(),
         pending_approval: None,
+        pending_validation_retry: None,
     }
 }
 
@@ -967,19 +968,109 @@ async fn session_new_command_updates_status() {
 }
 
 #[tokio::test]
-async fn provider_validation_failure_returns_to_api_key_step() {
+async fn validation_failure_enters_retry_state() {
     let mut app = test_app();
     app.busy = true;
     app.onboarding_selected_model = Some("test-model".to_string());
+    app.onboarding_selected_api_key = Some("sk-test".to_string());
 
     app.handle_worker_event(WorkerEvent::ProviderValidationFailed {
         message: "connection refused".to_string(),
     });
 
     assert!(!app.busy);
-    assert!(app.onboarding_api_key_pending);
-    assert_eq!(app.onboarding_prompt.as_deref(), Some("api key"));
+    assert!(app.pending_validation_retry.is_some());
+    assert_eq!(
+        app.pending_validation_retry
+            .as_ref()
+            .unwrap()
+            .failure_message,
+        "connection refused"
+    );
+    // Retry panel owns the composer — no individual step should be pending.
+    assert!(!app.onboarding_api_key_pending);
+    assert!(!app.onboarding_custom_model_pending);
+    assert!(!app.onboarding_base_url_pending);
     assert!(app.status_message.contains("connection refused"));
+    // Both the error and the "What next?" explainer should be in the transcript.
+    assert!(
+        app.transcript
+            .iter()
+            .any(|item| item.title == "Validation failed")
+    );
+    assert!(app.transcript.iter().any(|item| item.title == "What next?"));
+}
+
+#[tokio::test]
+async fn validation_failure_allows_retry_without_losing_input() {
+    let mut app = test_app();
+    app.busy = true;
+    app.onboarding_selected_model = Some("test-model".to_string());
+    app.onboarding_selected_base_url = Some("https://example.test".to_string());
+    app.onboarding_selected_api_key = Some("sk-test".to_string());
+
+    app.handle_worker_event(WorkerEvent::ProviderValidationFailed {
+        message: "connection refused".to_string(),
+    });
+    assert!(app.pending_validation_retry.is_some());
+
+    app.retry_validation();
+
+    // Retry clears the decision flag and re-enters the validating state.
+    assert!(app.pending_validation_retry.is_none());
+    assert!(app.busy);
+    assert_eq!(app.status_message, "Validating provider connection");
+    // Inputs the user typed must survive the retry so the second probe uses
+    // exactly the same parameters.
+    assert_eq!(app.onboarding_selected_model.as_deref(), Some("test-model"));
+    assert_eq!(
+        app.onboarding_selected_base_url.as_deref(),
+        Some("https://example.test")
+    );
+    assert_eq!(app.onboarding_selected_api_key.as_deref(), Some("sk-test"));
+}
+
+#[tokio::test]
+async fn validation_skip_pushes_save_without_probe_notice() {
+    let mut app = test_app();
+    app.onboarding_selected_model = Some("test-model".to_string());
+    app.onboarding_selected_api_key = Some("sk-test".to_string());
+
+    app.handle_worker_event(WorkerEvent::ProviderValidationFailed {
+        message: "connection refused".to_string(),
+    });
+
+    app.skip_validation_and_save();
+
+    assert!(app.pending_validation_retry.is_none());
+    assert!(
+        app.transcript
+            .iter()
+            .any(|item| item.kind == TranscriptItemKind::System
+                && item.body.contains("Saving without validation")),
+        "expected a System transcript item noting the skip, got {:?}",
+        app.transcript
+    );
+}
+
+#[tokio::test]
+async fn validation_change_reprompts_for_model_in_preset_flow() {
+    let mut app = test_app();
+    app.onboarding_preset_id = Some("openrouter".to_string());
+    app.onboarding_selected_model = Some("bad-slug".to_string());
+    app.onboarding_selected_api_key = Some("sk-test".to_string());
+
+    app.handle_worker_event(WorkerEvent::ProviderValidationFailed {
+        message: "unknown model".to_string(),
+    });
+
+    app.change_validation_inputs();
+
+    assert!(app.pending_validation_retry.is_none());
+    assert!(app.onboarding_custom_model_pending);
+    assert!(app.onboarding_selected_model.is_none());
+    // The API key is still the likely-good part — don't make the user retype it.
+    assert_eq!(app.onboarding_selected_api_key.as_deref(), Some("sk-test"));
 }
 
 #[tokio::test]

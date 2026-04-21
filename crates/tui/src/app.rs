@@ -181,6 +181,12 @@ pub(crate) struct TuiApp {
     /// Pending approval request awaiting a user decision, if any. While this is
     /// set, the composer intercepts `y`/`n` (and `Esc`) to resolve the request.
     pub(crate) pending_approval: Option<PendingApprovalState>,
+    /// Pending provider-validation failure awaiting a user decision. While this
+    /// is set, the composer intercepts `r`/`s`/`c`/`Esc` to retry the probe,
+    /// skip validation and save anyway, change inputs, or abort onboarding.
+    /// The onboarding inputs stay in the existing `onboarding_selected_*`
+    /// fields so that retry and skip-and-save can reuse them.
+    pub(crate) pending_validation_retry: Option<PendingValidationRetry>,
 }
 
 /// Approval state waiting on the user's keystroke.
@@ -194,6 +200,15 @@ pub(crate) struct PendingApprovalState {
     pub(crate) approval_id: smol_str::SmolStr,
     /// Transcript index of the rendered prompt so it can be updated on resolve.
     pub(crate) transcript_index: usize,
+}
+
+/// Validation-failure state waiting on the user's keystroke. The offending
+/// inputs (model, base URL, API key) stay in the existing `onboarding_selected_*`
+/// fields on [`TuiApp`] so retry and skip-and-save can consume them directly.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PendingValidationRetry {
+    /// Error message from the failed probe, rendered in the retry prompt.
+    pub(crate) failure_message: String,
 }
 
 /// Immutable configuration used to launch the interactive terminal UI.

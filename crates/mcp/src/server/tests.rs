@@ -62,17 +62,13 @@ for line in sys.stdin:
 "#;
 
 fn python_bin() -> Option<&'static str> {
-    for candidate in ["python3", "python"] {
-        if std::process::Command::new(candidate)
+    ["python3", "python"].into_iter().find(|candidate| {
+        std::process::Command::new(candidate)
             .arg("--version")
             .output()
             .map(|o| o.status.success())
             .unwrap_or(false)
-        {
-            return Some(candidate);
-        }
-    }
-    None
+    })
 }
 
 fn record(id: &str, script: &str) -> Option<McpServerRecord> {

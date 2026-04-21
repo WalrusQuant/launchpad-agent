@@ -50,14 +50,12 @@ fn find_lpa_home_from_env(lpa_home_env: Option<&str>) -> std::io::Result<PathBuf
                     format!("LPA_HOME points to {val:?}, but that path is not a directory"),
                 ))
             } else {
-                path.canonicalize()
-                    .map(|p| strip_unc_prefix(p))
-                    .map_err(|err| {
-                        std::io::Error::new(
-                            err.kind(),
-                            format!("failed to canonicalize LPA_HOME {val:?}: {err}"),
-                        )
-                    })
+                path.canonicalize().map(strip_unc_prefix).map_err(|err| {
+                    std::io::Error::new(
+                        err.kind(),
+                        format!("failed to canonicalize LPA_HOME {val:?}: {err}"),
+                    )
+                })
             }
         }
         None => {

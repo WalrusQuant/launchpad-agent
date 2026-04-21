@@ -45,6 +45,10 @@ pub struct ServerRuntimeDependencies {
 
 impl ServerRuntimeDependencies {
     /// Creates a new bundle of runtime dependencies for the transport server.
+    // The dependency bundle legitimately carries 8 fields that the transport
+    // server needs at construction. Collapsing into a builder struct is a
+    // separate refactor — flagged in wishlist.md.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         provider: Arc<dyn ModelProviderSDK>,
         registry: Arc<ToolRegistry>,

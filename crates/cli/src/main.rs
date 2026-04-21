@@ -248,7 +248,7 @@ async fn run_doctor() -> Result<()> {
 
     let mut all_ok = true;
 
-    println!("{} {}", "✓".green().bold(), "Rust toolchain:");
+    println!("{} Rust toolchain:", "✓".green().bold());
     let rustc = Command::new("rustc").arg("--version").output();
     match rustc {
         Ok(output) => {
@@ -262,7 +262,7 @@ async fn run_doctor() -> Result<()> {
     }
     println!();
 
-    println!("{} {}", "✓".green().bold(), "Config home (LPA_HOME):");
+    println!("{} Config home (LPA_HOME):", "✓".green().bold());
     match find_lpa_home() {
         Ok(home) => {
             println!("  {}", home.display());
@@ -274,7 +274,7 @@ async fn run_doctor() -> Result<()> {
     }
     println!();
 
-    println!("{} {}", "✓".green().bold(), "Config file:");
+    println!("{} Config file:", "✓".green().bold());
     if let Ok(home) = find_lpa_home() {
         let config_path = home.join("config.toml");
         if config_path.exists() {
@@ -304,7 +304,7 @@ async fn run_doctor() -> Result<()> {
     }
     println!();
 
-    println!("{} {}", "✓".green().bold(), "Provider resolution:");
+    println!("{} Provider resolution:", "✓".green().bold());
     match resolve_provider_settings() {
         Ok(resolved) => {
             println!("  provider:   {}", resolved.provider_id);
@@ -328,7 +328,7 @@ async fn run_doctor() -> Result<()> {
     }
     println!();
 
-    println!("{} {}", "✓".green().bold(), "Model catalog:");
+    println!("{} Model catalog:", "✓".green().bold());
     match lpa_core::PresetModelCatalog::load() {
         Ok(catalog) => {
             let count = catalog.into_inner().len();

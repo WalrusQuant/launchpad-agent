@@ -249,6 +249,7 @@ impl TuiApp {
             WorkerEvent::ProviderValidationSucceeded { reply_preview } => {
                 self.close_inline_assistant_stream();
                 self.busy = false;
+                self.pending_validation_retry = None;
                 self.push_item(
                     TranscriptItemKind::System,
                     "Configure",
@@ -268,38 +269,34 @@ impl TuiApp {
             WorkerEvent::ProviderValidationFailed { message } => {
                 self.close_inline_assistant_stream();
                 self.busy = false;
+                self.input.clear();
                 self.push_item(
                     TranscriptItemKind::Error,
                     "Validation failed",
                     message.clone(),
                 );
-                self.input.clear();
+                self.push_item(
+                    TranscriptItemKind::System,
+                    "What next?",
+                    "[R]etry with the same inputs  \
+                     [S]kip validation and save anyway  \
+                     [C]hange inputs  \
+                     [Esc] cancel onboarding"
+                        .to_string(),
+                );
+                // Any partially-collected step flags would collide with the
+                // retry panel's key intercept — clear them. The actual values
+                // (model, base URL, API key) stay in onboarding_selected_*
+                // so retry / skip-and-save can reuse them unchanged.
+                self.onboarding_custom_model_pending = false;
+                self.onboarding_base_url_pending = false;
+                self.onboarding_api_key_pending = false;
+                self.onboarding_prompt =
+                    Some("R retry · S skip & save · C change · Esc cancel".to_string());
                 self.status_message = format!("Validation failed: {message}");
-
-                // Preset flow: the API key already worked to reach the server,
-                // so the likely culprit is a bad model slug. Re-ask for the
-                // model, preserving the key. Press Esc to fully restart.
-                if let Some(preset_id) = self.onboarding_preset_id.clone() {
-                    let label = lpa_core::preset_by_id(&preset_id)
-                        .map(|p| p.display_name.to_string())
-                        .unwrap_or(preset_id);
-                    self.onboarding_api_key_pending = false;
-                    self.onboarding_custom_model_pending = true;
-                    self.onboarding_selected_model = None;
-                    self.onboarding_prompt =
-                        Some(format!("retry model slug for {label} (Esc to cancel)"));
-                    self.push_item(
-                        TranscriptItemKind::System,
-                        "Try a different model",
-                        "Your API key reached the provider. Try a different \
-                         model slug — or press Esc to start over."
-                            .to_string(),
-                    );
-                } else {
-                    // Legacy flow: re-ask for api key as before.
-                    self.onboarding_api_key_pending = true;
-                    self.onboarding_prompt = Some("api key".to_string());
-                }
+                self.pending_validation_retry = Some(PendingValidationRetry {
+                    failure_message: message,
+                });
             }
             WorkerEvent::SessionsListed { sessions } => {
                 self.close_inline_assistant_stream();

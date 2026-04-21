@@ -638,13 +638,14 @@ fn select_hunk_anchor(hunk: &PatchHunk) -> Option<(usize, &str)> {
         match line {
             HunkLine::Context(text) => {
                 let candidate = (sequence_index, text.as_str());
-                if !text.trim().is_empty()
+                // Prefer a longer non-whitespace anchor, but fall back to any
+                // candidate (including whitespace-only) if nothing has been
+                // picked yet — so empty hunks still get something to match on.
+                let beats_current = !text.trim().is_empty()
                     && best_anchor
                         .map(|(_, best_text): (usize, &str)| text.len() > best_text.len())
-                        .unwrap_or(true)
-                {
-                    best_anchor = Some(candidate);
-                } else if best_anchor.is_none() {
+                        .unwrap_or(true);
+                if beats_current || best_anchor.is_none() {
                     best_anchor = Some(candidate);
                 }
                 sequence_index += 1;
