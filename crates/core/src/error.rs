@@ -1,9 +1,11 @@
 use thiserror::Error;
 
+use lpa_provider::ProviderError;
+
 #[derive(Debug, Error)]
 pub enum AgentError {
     #[error("model provider error: {0}")]
-    Provider(#[from] anyhow::Error),
+    Provider(#[from] ProviderError),
 
     #[error("max turns ({0}) exceeded")]
     MaxTurnsExceeded(usize),
@@ -32,9 +34,11 @@ mod tests {
     }
 
     #[test]
-    fn provider_error_from_anyhow() {
-        let anyhow_err = anyhow::anyhow!("connection refused");
-        let err: AgentError = anyhow_err.into();
-        assert!(err.to_string().contains("connection refused"));
+    fn provider_error_from_typed() {
+        let provider_err = ProviderError::AuthenticationFailure {
+            message: "bad key".to_string(),
+        };
+        let err: AgentError = provider_err.into();
+        assert!(err.to_string().contains("bad key"));
     }
 }

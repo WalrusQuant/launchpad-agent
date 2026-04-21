@@ -35,7 +35,7 @@ impl Tool for LspTool {
         _ctx: &ToolContext,
         input: serde_json::Value,
     ) -> anyhow::Result<ToolOutput> {
-        let operation = input["operation"].as_str().unwrap_or("");
+        let operation = input["operation"].as_str().ok_or_else(|| anyhow::anyhow!("missing 'operation' field"))?;
         Ok(ToolOutput::success(format!(
             "LSP request received for {operation}"
         )))

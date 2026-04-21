@@ -16,6 +16,8 @@ use lpa_protocol::{
     ModelRequest, RequestContent, RequestMessage, ResponseContent, SamplingControls,
 };
 use lpa_provider::ModelProviderSDK;
+#[cfg(test)]
+use lpa_provider::ProviderError;
 use serde::Deserialize;
 
 use crate::{
@@ -195,12 +197,12 @@ mod tests {
     use std::sync::Mutex;
 
     struct StubProvider {
-        response: Mutex<Option<anyhow::Result<ModelResponse>>>,
+        response: Mutex<Option<Result<ModelResponse, ProviderError>>>,
         last_request: Mutex<Option<ModelRequest>>,
     }
 
     impl StubProvider {
-        fn with_response(response: anyhow::Result<ModelResponse>) -> Arc<Self> {
+        fn with_response(response: Result<ModelResponse, ProviderError>) -> Arc<Self> {
             Arc::new(Self {
                 response: Mutex::new(Some(response)),
                 last_request: Mutex::new(None),
@@ -214,7 +216,7 @@ mod tests {
 
     #[async_trait]
     impl ModelProviderSDK for StubProvider {
-        async fn completion(&self, request: ModelRequest) -> anyhow::Result<ModelResponse> {
+        async fn completion(&self, request: ModelRequest) -> Result<ModelResponse, ProviderError> {
             *self.last_request.lock().unwrap() = Some(request);
             self.response
                 .lock()
@@ -226,7 +228,7 @@ mod tests {
         async fn completion_stream(
             &self,
             _request: ModelRequest,
-        ) -> anyhow::Result<Pin<Box<dyn Stream<Item = anyhow::Result<StreamEvent>> + Send>>>
+        ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> + Send>>, ProviderError>
         {
             unimplemented!("streaming not exercised by compactor tests")
         }
@@ -315,7 +317,7 @@ mod tests {
 
     #[tokio::test]
     async fn compact_surfaces_provider_errors() {
-        let provider = StubProvider::with_response(Err(anyhow::anyhow!("upstream 503")));
+        let provider = StubProvider::with_response(Err(ProviderError::ServerError { message: "upstream 503".to_string(), status_code: Some(503) }));
         let compactor = LlmContextCompactor::new(provider, "m");
         let result = compactor
             .compact(history(&["[user] hi\n"]), TokenBudget::default())

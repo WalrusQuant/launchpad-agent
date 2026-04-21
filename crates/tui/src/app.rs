@@ -17,10 +17,8 @@ use crate::{
         TranscriptItemKind, WorkerEvent,
     },
     input::InputBuffer,
-    onboarding::save_onboarding_config,
     paste_burst::PasteBurst,
     render,
-    slash::{SlashCommandSpec, matching_slash_commands},
     terminal::{ManagedTerminal, TerminalMode},
     worker::{QueryWorkerConfig, QueryWorkerHandle},
 };
@@ -237,7 +235,7 @@ pub struct InteractiveTuiConfig {
 
 #[path = "runtime.rs"]
 mod runtime;
-#[path = "selection.rs"]
+#[path = "selection/mod.rs"]
 mod selection;
 #[path = "worker_events.rs"]
 pub(crate) mod worker_events;

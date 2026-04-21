@@ -19,7 +19,7 @@ use lpa_protocol::{
     ModelRequest, ModelResponse, RequestContent, ResponseContent, ResponseMetadata, StopReason,
     StreamEvent, Usage,
 };
-use lpa_provider::ModelProviderSDK;
+use lpa_provider::{ModelProviderSDK, ProviderError};
 use lpa_server::{
     ClientTransportKind, ErrorResponse, ProtocolErrorCode, ServerRuntime,
     ServerRuntimeDependencies, SkillChangedResult, SkillListResult, SkillRecord, SkillSource,
@@ -38,7 +38,7 @@ struct CapturingProvider {
 
 #[async_trait]
 impl ModelProviderSDK for CapturingProvider {
-    async fn completion(&self, _request: ModelRequest) -> Result<ModelResponse> {
+    async fn completion(&self, _request: ModelRequest) -> Result<ModelResponse, ProviderError> {
         Ok(ModelResponse {
             id: "title-1".into(),
             content: vec![ResponseContent::Text("Generated skill title".into())],
@@ -51,7 +51,7 @@ impl ModelProviderSDK for CapturingProvider {
     async fn completion_stream(
         &self,
         request: ModelRequest,
-    ) -> Result<Pin<Box<dyn futures::Stream<Item = Result<StreamEvent>> + Send>>> {
+    ) -> Result<Pin<Box<dyn futures::Stream<Item = Result<StreamEvent, ProviderError>> + Send>>, ProviderError> {
         self.stream_requests
             .lock()
             .expect("stream request lock")
@@ -281,7 +281,7 @@ struct SteerCapturingProvider {
 
 #[async_trait]
 impl ModelProviderSDK for SteerCapturingProvider {
-    async fn completion(&self, _request: ModelRequest) -> Result<ModelResponse> {
+    async fn completion(&self, _request: ModelRequest) -> Result<ModelResponse, ProviderError> {
         Ok(ModelResponse {
             id: "title-1".into(),
             content: vec![ResponseContent::Text("Generated skill title".into())],
@@ -294,7 +294,7 @@ impl ModelProviderSDK for SteerCapturingProvider {
     async fn completion_stream(
         &self,
         request: ModelRequest,
-    ) -> Result<Pin<Box<dyn futures::Stream<Item = Result<StreamEvent>> + Send>>> {
+    ) -> Result<Pin<Box<dyn futures::Stream<Item = Result<StreamEvent, ProviderError>> + Send>>, ProviderError> {
         let request_number = {
             let mut requests = self.stream_requests.lock().expect("stream request lock");
             requests.push(request);

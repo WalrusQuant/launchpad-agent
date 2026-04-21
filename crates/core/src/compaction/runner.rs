@@ -110,6 +110,7 @@ pub fn warn_compaction_failed(error: &CompactionError) {
 
 #[cfg(test)]
 mod tests {
+    use lpa_provider::ProviderError;
     use super::*;
     use async_trait::async_trait;
     use futures::Stream;
@@ -122,7 +123,7 @@ mod tests {
     use std::sync::Mutex;
 
     struct StubProvider {
-        response: Mutex<Option<anyhow::Result<ModelResponse>>>,
+        response: Mutex<Option<Result<ModelResponse, lpa_provider::ProviderError>>>,
     }
 
     impl StubProvider {
@@ -140,21 +141,24 @@ mod tests {
 
         fn failing(message: &str) -> Arc<Self> {
             Arc::new(Self {
-                response: Mutex::new(Some(Err(anyhow::anyhow!(message.to_string())))),
+                response: Mutex::new(Some(Err(lpa_provider::ProviderError::Other {
+                    message: message.to_string(),
+                    source: None,
+                }))),
             })
         }
     }
 
     #[async_trait]
     impl ModelProviderSDK for StubProvider {
-        async fn completion(&self, _request: ModelRequest) -> anyhow::Result<ModelResponse> {
+        async fn completion(&self, _request: ModelRequest) -> Result<ModelResponse, ProviderError> {
             self.response.lock().unwrap().take().expect("called once")
         }
 
         async fn completion_stream(
             &self,
             _request: ModelRequest,
-        ) -> anyhow::Result<Pin<Box<dyn Stream<Item = anyhow::Result<StreamEvent>> + Send>>>
+        ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> + Send>>, ProviderError>
         {
             unimplemented!("not used")
         }

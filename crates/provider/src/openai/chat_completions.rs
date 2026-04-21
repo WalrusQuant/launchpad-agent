@@ -1,6 +1,5 @@
 use std::pin::Pin;
 
-use anyhow::{Context, Result};
 use async_trait::async_trait;
 use futures::Stream;
 use reqwest::Client;
@@ -17,7 +16,7 @@ use lpa_protocol::{
 use super::capabilities::{OpenAIReasoningMode, OpenAITransport, resolve_request_profile};
 use super::shared::{reasoning_value, request_role, tool_definitions};
 use crate::text_normalization::split_tagged_text;
-use crate::{ModelProviderSDK, ProviderAdapter, ProviderCapabilities, merge_extra_body};
+use crate::{ModelProviderSDK, ProviderAdapter, ProviderCapabilities, ProviderError, merge_extra_body};
 
 /// OpenAI chat-completion provider backed by the official HTTP API.
 /// <https://developers.openai.com/api/reference/chat-completions/overview>
@@ -731,9 +730,12 @@ fn build_request(request: &ModelRequest, stream: bool) -> Value {
 /// - Other documented response fields such as `created`, `model`, `object`,
 ///   `service_tier`, `annotations`, `audio`, `logprobs`, and deprecated
 ///   `function_call` are not currently mapped into `ModelResponse`.
-fn parse_response(value: Value) -> Result<ModelResponse> {
+fn parse_response(value: Value) -> Result<ModelResponse, ProviderError> {
     let response: OpenAIChatCompletionResponse = serde_json::from_value(value.clone())
-        .context("failed to deserialize openai chat-completion response")?;
+        .map_err(|err| ProviderError::Other {
+            message: format!("failed to deserialize openai chat-completion response: {err}"),
+            source: None,
+        })?;
     let mut content = Vec::new();
     let mut stop_reason = None;
     let mut metadata = ResponseMetadata::default();
@@ -1003,7 +1005,7 @@ fn parse_finish_reason(value: &str) -> StopReason {
 
 #[async_trait]
 impl ModelProviderSDK for OpenAIProvider {
-    async fn completion(&self, request: ModelRequest) -> Result<ModelResponse> {
+    async fn completion(&self, request: ModelRequest) -> Result<ModelResponse, ProviderError> {
         let body = build_request(&request, false);
         debug!(
             provider = "openai",
@@ -1019,14 +1021,22 @@ impl ModelProviderSDK for OpenAIProvider {
             .request_builder(&body)
             .send()
             .await
-            .context("failed to send openai request")?
-            .error_for_status()
-            .context("openai request failed")?;
+            .map_err(|err| ProviderError::Other {
+                message: format!("failed to send openai request: {err}"),
+                source: Some(err.into()),
+            })?;
 
-        let value: Value = response
-            .json()
-            .await
-            .context("failed to decode openai response")?;
+        let status = response.status();
+        if !status.is_success() {
+            let status_code = status.as_u16();
+            let body_text = response.text().await.unwrap_or_default();
+            return Err(ProviderError::from_http_status(status_code, &body_text));
+        }
+
+        let value: Value = response.json().await.map_err(|err| ProviderError::Other {
+            message: format!("failed to decode openai response: {err}"),
+            source: Some(err.into()),
+        })?;
         parse_response(value)
     }
 
@@ -1040,7 +1050,7 @@ impl ModelProviderSDK for OpenAIProvider {
     async fn completion_stream(
         &self,
         request: ModelRequest,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>> {
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> + Send>>, ProviderError> {
         stream::completion_stream(self, request).await
     }
 
@@ -1275,13 +1285,12 @@ mod tests {
         assert_eq!(response.usage.output_tokens, 17);
         assert_eq!(response.usage.cache_read_input_tokens, Some(12));
         assert_eq!(response.content.len(), 1);
-        match &response.content[0] {
-            ResponseContent::ToolUse { id, name, input } => {
-                assert_eq!(id, "call_abc123");
-                assert_eq!(name, "get_weather");
-                assert_eq!(input, &json!({"location": "Boston, MA"}));
-            }
-            other => panic!("expected tool use, got {other:?}"),
+        if let ResponseContent::ToolUse { id, name, input } = &response.content[0] {
+            assert_eq!(id, "call_abc123");
+            assert_eq!(name, "get_weather");
+            assert_eq!(input, &json!({"location": "Boston, MA"}));
+        } else {
+            panic!("expected tool use, got {:?}", response.content[0]);
         }
         assert!(response.metadata.extras.iter().any(|extra| matches!(
             extra,
@@ -1312,12 +1321,10 @@ mod tests {
 
         assert_eq!(response.stop_reason, Some(StopReason::EndTurn));
         assert_eq!(response.content.len(), 1);
-        match &response.content[0] {
-            ResponseContent::Text(text) => {
-                assert_eq!(text, "Hello! How can I assist you today?");
-            }
-            other => panic!("expected text response, got {other:?}"),
-        }
+        assert!(matches!(
+            &response.content[0],
+            ResponseContent::Text(t) if t == "Hello! How can I assist you today?"
+        ));
     }
 
     #[test]

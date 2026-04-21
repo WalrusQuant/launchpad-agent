@@ -1,10 +1,13 @@
 use async_trait::async_trait;
 use chrono::Datelike;
 use serde_json::json;
+use std::sync::OnceLock;
 
 use crate::{Tool, ToolContext, ToolOutput};
 
 const DESCRIPTION: &str = include_str!("websearch.txt");
+
+static CACHED_DESCRIPTION: OnceLock<String> = OnceLock::new();
 
 pub struct WebSearchTool;
 
@@ -15,11 +18,10 @@ impl Tool for WebSearchTool {
     }
 
     fn description(&self) -> &str {
-        Box::leak(
+        CACHED_DESCRIPTION.get_or_init(|| {
             DESCRIPTION
                 .replace("{{year}}", &chrono::Utc::now().year().to_string())
-                .into_boxed_str(),
-        )
+        })
     }
 
     fn input_schema(&self) -> serde_json::Value {
@@ -41,7 +43,7 @@ impl Tool for WebSearchTool {
         _ctx: &ToolContext,
         input: serde_json::Value,
     ) -> anyhow::Result<ToolOutput> {
-        let query = input["query"].as_str().unwrap_or("");
+        let query = input["query"].as_str().ok_or_else(|| anyhow::anyhow!("missing 'query' field"))?;
         let client = reqwest::Client::new();
         let payload = json!({
             "jsonrpc": "2.0",

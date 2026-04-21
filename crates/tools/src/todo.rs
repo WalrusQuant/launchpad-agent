@@ -32,7 +32,7 @@ impl Tool for TodoWriteTool {
         _ctx: &ToolContext,
         input: serde_json::Value,
     ) -> anyhow::Result<ToolOutput> {
-        let todos = input["todos"].as_array().cloned().unwrap_or_default();
+        let todos = input["todos"].as_array().ok_or_else(|| anyhow::anyhow!("missing 'todos' field"))?.clone();
         Ok(ToolOutput::success(serde_json::to_string_pretty(&todos)?))
     }
 }

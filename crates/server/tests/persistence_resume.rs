@@ -12,7 +12,7 @@ use lpa_core::{FileSystemSkillCatalog, PresetModelCatalog, SkillsConfig};
 use lpa_protocol::{
     ModelRequest, ModelResponse, ResponseContent, ResponseMetadata, StopReason, StreamEvent, Usage,
 };
-use lpa_provider::ModelProviderSDK;
+use lpa_provider::{ModelProviderSDK, ProviderError};
 use lpa_server::{ClientTransportKind, ServerRuntime, ServerRuntimeDependencies};
 use lpa_tools::ToolRegistry;
 
@@ -20,7 +20,7 @@ struct SingleReplyProvider;
 
 #[async_trait]
 impl ModelProviderSDK for SingleReplyProvider {
-    async fn completion(&self, _request: ModelRequest) -> Result<ModelResponse> {
+    async fn completion(&self, _request: ModelRequest) -> Result<ModelResponse, ProviderError> {
         Ok(ModelResponse {
             id: "title-1".into(),
             content: vec![ResponseContent::Text("Generated rollout title".to_string())],
@@ -33,7 +33,7 @@ impl ModelProviderSDK for SingleReplyProvider {
     async fn completion_stream(
         &self,
         _request: ModelRequest,
-    ) -> Result<std::pin::Pin<Box<dyn futures::Stream<Item = Result<StreamEvent>> + Send>>> {
+    ) -> Result<std::pin::Pin<Box<dyn futures::Stream<Item = Result<StreamEvent, ProviderError>> + Send>>, ProviderError> {
         Ok(Box::pin(stream::iter(vec![
             Ok(StreamEvent::TextDelta {
                 index: 0,

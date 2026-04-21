@@ -3,7 +3,6 @@ use std::{
     pin::Pin,
 };
 
-use anyhow::{Context, Result};
 use async_trait::async_trait;
 use futures::{Stream, StreamExt};
 use lpa_protocol::{
@@ -18,7 +17,7 @@ use serde_json::{Value, json};
 use tracing::debug;
 
 use super::AnthropicAIRole;
-use crate::{ModelProviderSDK, ProviderAdapter, ProviderCapabilities, merge_extra_body};
+use crate::{ModelProviderSDK, ProviderAdapter, ProviderCapabilities, ProviderError, merge_extra_body};
 
 /// <https://platform.claude.com/docs/en/api/messages>
 /// Anthropic provider backed by the official HTTP API.
@@ -225,7 +224,7 @@ struct AnthropicResponseContentBlock {
 
 #[async_trait]
 impl ModelProviderSDK for AnthropicProvider {
-    async fn completion(&self, request: ModelRequest) -> Result<ModelResponse> {
+    async fn completion(&self, request: ModelRequest) -> Result<ModelResponse, ProviderError> {
         let body = build_request(&request, false);
         debug!(
             provider = "anthropic",
@@ -241,21 +240,29 @@ impl ModelProviderSDK for AnthropicProvider {
             .request_builder(&body)
             .send()
             .await
-            .context("failed to send anthropic request")?
-            .error_for_status()
-            .context("anthropic request failed")?;
+            .map_err(|err| ProviderError::Other {
+                message: "failed to send anthropic request".to_string(),
+                source: Some(err.into()),
+            })?;
 
-        let value: Value = response
-            .json()
-            .await
-            .context("failed to decode anthropic response")?;
+        let status = response.status();
+        if !status.is_success() {
+            let status_code = status.as_u16();
+            let body_text = response.text().await.unwrap_or_default();
+            return Err(ProviderError::from_http_status(status_code, &body_text));
+        }
+
+        let value: Value = response.json().await.map_err(|err| ProviderError::Other {
+            message: "failed to decode anthropic response".to_string(),
+            source: Some(err.into()),
+        })?;
         parse_response(value)
     }
 
     async fn completion_stream(
         &self,
         request: ModelRequest,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>> {
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> + Send>>, ProviderError> {
         let body = build_request(&request, true);
         debug!(
             provider = "anthropic",
@@ -267,8 +274,11 @@ impl ModelProviderSDK for AnthropicProvider {
             "sending anthropic streaming request"
         );
 
-        let event_source = EventSource::new(self.request_builder(&body))
-            .context("failed to create anthropic event source")?;
+        let event_source = EventSource::new(self.request_builder(&body)).map_err(|err| {
+            ProviderError::StreamError {
+                message: format!("failed to create anthropic event source: {err}"),
+            }
+        })?;
         let stream = async_stream::try_stream! {
             let mut message_id = String::new();
             let mut input_tokens = 0usize;
@@ -281,14 +291,19 @@ impl ModelProviderSDK for AnthropicProvider {
             futures::pin_mut!(event_source);
             while let Some(event) = event_source.next().await {
                 let event = event.map_err(|error| {
-                    anyhow::anyhow!("anthropic stream error for model {}: {error}", request.model)
+                    ProviderError::StreamError {
+                        message: format!("anthropic stream error for model {}: {error}", request.model),
+                    }
                 })?;
 
                 match event {
                     Event::Open => {}
                     Event::Message(message) => {
                         let data: Value = serde_json::from_str(&message.data)
-                            .map_err(|error| anyhow::anyhow!("failed to parse anthropic stream payload: {error}"))?;
+                            .map_err(|error| ProviderError::Other {
+                                message: "failed to parse anthropic stream payload".to_string(),
+                                source: Some(error.into()),
+                            })?;
 
                         match message.event.as_str() {
                             "message_start" => {
@@ -316,9 +331,10 @@ impl ModelProviderSDK for AnthropicProvider {
                                 };
                                 let block: AnthropicResponseContentBlock =
                                     serde_json::from_value(content_block.clone()).map_err(|error| {
-                                        anyhow::anyhow!(
-                                            "failed to parse anthropic content block start: {error}"
-                                        )
+                                        ProviderError::Other {
+                                            message: "failed to parse anthropic content block start".to_string(),
+                                            source: Some(error.into()),
+                                        }
                                     })?;
                                 match block.kind.as_str() {
                                     "text" => {
@@ -763,9 +779,13 @@ fn build_request(request: &ModelRequest, stream: bool) -> Value {
 ///  }
 ///}
 /// ```
-fn parse_response(value: Value) -> Result<ModelResponse> {
-    let response: AnthropicMessageResponse = serde_json::from_value(value.clone())
-        .context("failed to deserialize anthropic messages response")?;
+fn parse_response(value: Value) -> Result<ModelResponse, ProviderError> {
+    let response: AnthropicMessageResponse = serde_json::from_value(value.clone()).map_err(|error| {
+        ProviderError::Other {
+            message: "failed to deserialize anthropic messages response".to_string(),
+            source: Some(error.into()),
+        }
+    })?;
     let mut content = Vec::new();
     let mut metadata = ResponseMetadata::default();
 
@@ -1049,19 +1069,16 @@ mod tests {
         assert_eq!(response.usage.cache_creation_input_tokens, Some(3));
         assert_eq!(response.usage.cache_read_input_tokens, Some(5));
         assert_eq!(response.content.len(), 2);
-        match &response.content[0] {
-            ResponseContent::Text(text) => {
-                assert_eq!(text, "Let me check that.");
-            }
-            other => panic!("expected text block, got {other:?}"),
-        }
-        match &response.content[1] {
-            ResponseContent::ToolUse { id, name, input } => {
-                assert_eq!(id, "srvtool_1");
-                assert_eq!(name, "web_search");
-                assert_eq!(input, &json!({"query": "Boston weather"}));
-            }
-            other => panic!("expected tool use block, got {other:?}"),
+        assert!(matches!(
+            &response.content[0],
+            ResponseContent::Text(t) if t == "Let me check that."
+        ));
+        if let ResponseContent::ToolUse { id, name, input } = &response.content[1] {
+            assert_eq!(id, "srvtool_1");
+            assert_eq!(name, "web_search");
+            assert_eq!(input, &json!({"query": "Boston weather"}));
+        } else {
+            panic!("expected tool use block, got {:?}", response.content[1]);
         }
         assert!(response.metadata.extras.iter().any(|extra| matches!(
             extra,

@@ -271,9 +271,27 @@ fn platform_shell(login: bool) -> ShellSpec {
             args: &["-NoProfile", "-Command"],
         }
     } else {
-        ShellSpec {
-            program: "bash",
-            args: if login { &["-lc"] } else { &["-c"] },
+        let detected = std::env::var("SHELL")
+            .ok()
+            .and_then(|s| {
+                let p = std::path::Path::new(&s);
+                p.file_name().map(|f| f.to_string_lossy().to_string())
+            })
+            .unwrap_or_else(|| "bash".to_string());
+        match detected.as_str() {
+            "zsh" => ShellSpec {
+                program: "zsh",
+                args: if login { &["-lc"] } else { &["-c"] },
+            },
+            "fish" => ShellSpec {
+                program: "fish",
+                // Fish's arg parser rejects combined `-lc`; pass the flags separately.
+                args: if login { &["-l", "-c"] } else { &["-c"] },
+            },
+            _ => ShellSpec {
+                program: "bash",
+                args: if login { &["-lc"] } else { &["-c"] },
+            },
         }
     }
 }

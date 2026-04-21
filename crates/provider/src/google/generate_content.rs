@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 use std::pin::Pin;
 
-use anyhow::{Context, Result};
 use async_trait::async_trait;
 use futures::{Stream, StreamExt};
 use lpa_protocol::{
@@ -15,7 +14,7 @@ use serde_json::{Value, json};
 use tracing::debug;
 
 use super::GoogleRole;
-use crate::{ModelProviderSDK, ProviderAdapter, ProviderCapabilities, merge_extra_body};
+use crate::{ModelProviderSDK, ProviderAdapter, ProviderCapabilities, ProviderError, merge_extra_body};
 
 pub struct GoogleProvider {
     client: Client,
@@ -65,7 +64,7 @@ impl GoogleProvider {
 
 #[async_trait]
 impl ModelProviderSDK for GoogleProvider {
-    async fn completion(&self, request: ModelRequest) -> Result<ModelResponse> {
+    async fn completion(&self, request: ModelRequest) -> Result<ModelResponse, ProviderError> {
         let body = build_request(&request);
         let url = self.generate_content_endpoint(&request.model);
         debug!(
@@ -82,21 +81,29 @@ impl ModelProviderSDK for GoogleProvider {
             .request_builder(&url, &body)
             .send()
             .await
-            .context("failed to send google request")?
-            .error_for_status()
-            .context("google request failed")?;
+            .map_err(|err| ProviderError::Other {
+                message: "failed to send google request".to_string(),
+                source: Some(err.into()),
+            })?;
 
-        let value: Value = response
-            .json()
-            .await
-            .context("failed to decode google response")?;
+        let status = response.status();
+        if !status.is_success() {
+            let status_code = status.as_u16();
+            let body_text = response.text().await.unwrap_or_default();
+            return Err(ProviderError::from_http_status(status_code, &body_text));
+        }
+
+        let value: Value = response.json().await.map_err(|err| ProviderError::Other {
+            message: "failed to decode google response".to_string(),
+            source: Some(err.into()),
+        })?;
         parse_response(value)
     }
 
     async fn completion_stream(
         &self,
         request: ModelRequest,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>> {
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> + Send>>, ProviderError> {
         let body = build_request(&request);
         let url = self.stream_generate_content_endpoint(&request.model);
         debug!(
@@ -110,7 +117,10 @@ impl ModelProviderSDK for GoogleProvider {
         );
 
         let event_source = EventSource::new(self.request_builder(&url, &body))
-            .context("failed to create google event source")?;
+            .map_err(|err| ProviderError::Other {
+                message: "failed to create google event source".to_string(),
+                source: Some(err.into()),
+            })?;
 
         let stream = async_stream::try_stream! {
             let mut response_id = String::new();
@@ -127,16 +137,18 @@ impl ModelProviderSDK for GoogleProvider {
             futures::pin_mut!(event_source);
             while let Some(event) = event_source.next().await {
                 let event = event.map_err(|error| {
-                    anyhow::anyhow!("google stream error for model {}: {error}", request.model)
+                    ProviderError::StreamError {
+                        message: format!("google stream error for model {}: {error}", request.model),
+                    }
                 })?;
 
                 match event {
                     Event::Open => {}
                     Event::Message(message) => {
                         let data: Value = serde_json::from_str(&message.data)
-                            .map_err(|error| anyhow::anyhow!(
-                                "failed to parse google stream payload: {error}"
-                            ))?;
+                            .map_err(|error| ProviderError::StreamError {
+                                message: format!("failed to parse google stream payload: {error}"),
+                            })?;
 
                         if let Some(id) = data.get("responseId").and_then(Value::as_str)
                             && response_id.is_empty()
@@ -391,7 +403,7 @@ fn build_part(block: &RequestContent) -> Value {
     }
 }
 
-fn parse_response(value: Value) -> Result<ModelResponse> {
+fn parse_response(value: Value) -> Result<ModelResponse, ProviderError> {
     let mut content = Vec::new();
     let mut metadata = ResponseMetadata::default();
     let mut stop_reason = None;
@@ -638,17 +650,16 @@ mod tests {
         assert_eq!(response.usage.cache_read_input_tokens, Some(3));
         assert_eq!(response.content.len(), 2);
 
-        match &response.content[0] {
-            ResponseContent::Text(text) => assert_eq!(text, "Here is the answer."),
-            other => panic!("expected text block, got {other:?}"),
-        }
-        match &response.content[1] {
-            ResponseContent::ToolUse { id, name, input } => {
-                assert_eq!(id, "get_weather");
-                assert_eq!(name, "get_weather");
-                assert_eq!(input, &json!({"city": "Boston"}));
-            }
-            other => panic!("expected tool use block, got {other:?}"),
+        assert!(matches!(
+            &response.content[0],
+            ResponseContent::Text(t) if t == "Here is the answer."
+        ));
+        if let ResponseContent::ToolUse { id, name, input } = &response.content[1] {
+            assert_eq!(id, "get_weather");
+            assert_eq!(name, "get_weather");
+            assert_eq!(input, &json!({"city": "Boston"}));
+        } else {
+            panic!("expected tool use block, got {:?}", response.content[1]);
         }
 
         assert!(response.metadata.extras.iter().any(|extra| matches!(

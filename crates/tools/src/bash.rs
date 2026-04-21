@@ -6,14 +6,13 @@ use crate::{Tool, ToolContext, ToolOutput};
 use async_trait::async_trait;
 use serde_json::json;
 use std::path::PathBuf;
+use std::sync::OnceLock;
 
 const DESCRIPTION: &str = include_str!("bash.txt");
 const DESCRIPTION_MAX_BYTES_LABEL: &str = "64 KB";
 
-/// Execute shell commands.
-///
-/// This is the most powerful built-in tool. It runs commands in a child
-/// process and captures stdout/stderr.
+static CACHED_DESCRIPTION: OnceLock<String> = OnceLock::new();
+
 pub struct BashTool;
 
 #[async_trait]
@@ -22,14 +21,13 @@ impl Tool for BashTool {
         "bash"
     }
 
-    /// TODO: the shell tool should be re implemented.
     fn description(&self) -> &str {
-        let chaining = if cfg!(windows) {
-            "If commands depend on each other and must run sequentially, use a single PowerShell command string. In Windows PowerShell 5.1, do not rely on Bash chaining semantics like `cmd1 && cmd2`; prefer `cmd1; if ($?) { cmd2 }` when the later command depends on earlier success."
-        } else {
-            "If commands depend on each other and must run sequentially, use a single shell command and chain with `&&` when later commands depend on earlier success."
-        };
-        Box::leak(
+        CACHED_DESCRIPTION.get_or_init(|| {
+            let chaining = if cfg!(windows) {
+                "If commands depend on each other and must run sequentially, use a single PowerShell command string. In Windows PowerShell 5.1, do not rely on Bash chaining semantics like `cmd1 && cmd2`; prefer `cmd1; if ($?) { cmd2 }` when the later command depends on earlier success."
+            } else {
+                "If commands depend on each other and must run sequentially, use a single shell command and chain with `&&` when later commands depend on earlier success."
+            };
             DESCRIPTION
                 .replace(
                     "${directory}",
@@ -40,8 +38,7 @@ impl Tool for BashTool {
                 .replace("${shell}", platform_shell_program(true))
                 .replace("${chaining}", chaining)
                 .replace("${maxBytes}", DESCRIPTION_MAX_BYTES_LABEL)
-                .into_boxed_str(),
-        )
+        })
     }
 
     fn input_schema(&self) -> serde_json::Value {
@@ -149,10 +146,25 @@ mod tests {
 
     #[test]
     fn resolve_shell_defaults_to_platform_shell_login() {
-        assert_eq!(
-            platform_shell_program(true),
-            if cfg!(windows) { "powershell" } else { "bash" }
-        );
+        let result = platform_shell_program(true);
+        if cfg!(windows) {
+            assert_eq!(result, "powershell");
+        } else {
+            let expected = match std::env::var("SHELL")
+                .ok()
+                .and_then(|s| {
+                    let p = std::path::Path::new(&s);
+                    p.file_name().map(|f| f.to_string_lossy().to_string())
+                })
+                .unwrap_or_else(|| "bash".to_string())
+                .as_str()
+            {
+                "zsh" => "zsh",
+                "fish" => "fish",
+                _ => "bash",
+            };
+            assert_eq!(result, expected);
+        }
     }
 
     #[test]

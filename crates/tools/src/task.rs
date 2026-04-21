@@ -37,12 +37,12 @@ impl Tool for TaskTool {
         _ctx: &ToolContext,
         input: serde_json::Value,
     ) -> anyhow::Result<ToolOutput> {
-        let description = input["description"].as_str().unwrap_or("task");
+        let description = input["description"].as_str().ok_or_else(|| anyhow::anyhow!("missing 'description' field"))?;
         let task_id = input["task_id"]
             .as_str()
             .map(ToOwned::to_owned)
             .unwrap_or_else(|| Uuid::new_v4().to_string());
-        let prompt = input["prompt"].as_str().unwrap_or("");
+        let prompt = input["prompt"].as_str().ok_or_else(|| anyhow::anyhow!("missing 'prompt' field"))?;
         Ok(ToolOutput::success(format!(
             "task_id: {task_id} (for resuming to continue this task if needed)\n\n<task_result>\nTask requested: {description}\n{prompt}\n</task_result>"
         )))

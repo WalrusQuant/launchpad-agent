@@ -1,6 +1,5 @@
 use std::{collections::HashMap, pin::Pin};
 
-use anyhow::{Context, Result};
 use async_trait::async_trait;
 use futures::{Stream, StreamExt};
 use lpa_protocol::{
@@ -14,7 +13,7 @@ use serde_json::{Value, json};
 use tracing::debug;
 
 use crate::text_normalization::{TaggedTextFragment, TaggedTextParser, split_tagged_text};
-use crate::{ModelProviderSDK, merge_extra_body};
+use crate::{ModelProviderSDK, ProviderError, merge_extra_body};
 
 use super::capabilities::{OpenAITransport, resolve_request_profile};
 use super::{
@@ -161,7 +160,7 @@ fn build_input_message(role: OpenAIRole, content: &[RequestContent]) -> Value {
         "content": content,
     })
 }
-fn parse_response(value: Value) -> Result<ModelResponse> {
+fn parse_response(value: Value) -> Result<ModelResponse, ProviderError> {
     let id = value
         .get("id")
         .and_then(Value::as_str)
@@ -319,7 +318,7 @@ fn parse_status_reason(value: &str) -> StopReason {
 
 #[async_trait]
 impl ModelProviderSDK for OpenAIResponsesProvider {
-    async fn completion(&self, request: ModelRequest) -> Result<ModelResponse> {
+    async fn completion(&self, request: ModelRequest) -> Result<ModelResponse, ProviderError> {
         let body = build_request(&request, false);
         debug!(
             provider = "openai-responses",
@@ -335,21 +334,29 @@ impl ModelProviderSDK for OpenAIResponsesProvider {
             .request_builder(&body)
             .send()
             .await
-            .context("failed to send openai responses request")?
-            .error_for_status()
-            .context("openai responses request failed")?;
+            .map_err(|err| ProviderError::Other {
+                message: format!("failed to send openai responses request: {err}"),
+                source: Some(err.into()),
+            })?;
 
-        let value: Value = response
-            .json()
-            .await
-            .context("failed to decode openai responses response")?;
+        let status = response.status();
+        if !status.is_success() {
+            let status_code = status.as_u16();
+            let body_text = response.text().await.unwrap_or_default();
+            return Err(ProviderError::from_http_status(status_code, &body_text));
+        }
+
+        let value: Value = response.json().await.map_err(|err| ProviderError::Other {
+            message: format!("failed to decode openai responses response: {err}"),
+            source: Some(err.into()),
+        })?;
         parse_response(value)
     }
 
     async fn completion_stream(
         &self,
         request: ModelRequest,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>> {
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> + Send>>, ProviderError> {
         let body = build_request(&request, true);
         debug!(
             provider = "openai-responses",
@@ -362,7 +369,9 @@ impl ModelProviderSDK for OpenAIResponsesProvider {
         );
 
         let event_source = EventSource::new(self.request_builder(&body))
-            .context("failed to create openai responses event source")?;
+            .map_err(|err| ProviderError::StreamError {
+                message: format!("failed to create openai responses event source: {err}"),
+            })?;
         let stream = async_stream::try_stream! {
             let mut text_buf = String::new();
             let mut reasoning_buf = String::new();
@@ -376,7 +385,9 @@ impl ModelProviderSDK for OpenAIResponsesProvider {
             futures::pin_mut!(event_source);
             while let Some(event) = event_source.next().await {
                 let event = event.map_err(|error| {
-                    anyhow::anyhow!("openai responses stream error for model {}: {error}", request.model)
+                    ProviderError::StreamError {
+                        message: format!("openai responses stream error for model {}: {error}", request.model),
+                    }
                 })?;
 
                 match event {
@@ -387,7 +398,9 @@ impl ModelProviderSDK for OpenAIResponsesProvider {
                         }
 
                         let chunk: Value = serde_json::from_str(&message.data)
-                            .map_err(|error| anyhow::anyhow!("failed to parse openai responses stream chunk: {error}"))?;
+                            .map_err(|error| ProviderError::StreamError {
+                                message: format!("failed to parse openai responses stream chunk: {error}"),
+                            })?;
 
                         if response_id.is_empty() {
                             response_id = chunk

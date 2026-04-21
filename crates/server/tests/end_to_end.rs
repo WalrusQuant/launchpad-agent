@@ -15,7 +15,7 @@ use tokio_tungstenite::{connect_async, tungstenite::Message};
 use futures::stream;
 use lpa_core::{FileSystemSkillCatalog, PresetModelCatalog, SkillsConfig};
 use lpa_protocol::{ModelRequest, ModelResponse, StreamEvent};
-use lpa_provider::ModelProviderSDK;
+use lpa_provider::{ModelProviderSDK, ProviderError};
 use lpa_server::{ServerRuntime, ServerRuntimeDependencies};
 use lpa_tools::ToolRegistry;
 
@@ -54,14 +54,14 @@ struct PendingProvider;
 
 #[async_trait]
 impl ModelProviderSDK for PendingProvider {
-    async fn completion(&self, _request: ModelRequest) -> Result<ModelResponse> {
-        anyhow::bail!("test provider does not support completion")
+    async fn completion(&self, _request: ModelRequest) -> Result<ModelResponse, ProviderError> {
+        Err(ProviderError::Other { message: "test provider does not support completion".into(), source: None })
     }
 
     async fn completion_stream(
         &self,
         _request: ModelRequest,
-    ) -> Result<std::pin::Pin<Box<dyn futures::Stream<Item = Result<StreamEvent>> + Send>>> {
+    ) -> Result<std::pin::Pin<Box<dyn futures::Stream<Item = Result<StreamEvent, ProviderError>> + Send>>, ProviderError> {
         Ok(Box::pin(stream::pending()))
     }
 

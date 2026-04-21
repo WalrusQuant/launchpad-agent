@@ -1,6 +1,5 @@
 use std::{collections::BTreeMap, pin::Pin};
 
-use anyhow::{Context, Result};
 use futures::{Stream, StreamExt};
 use lpa_protocol::{
     ModelRequest, ModelResponse, ResponseContent, ResponseExtra, ResponseMetadata, StopReason,
@@ -18,6 +17,7 @@ use super::{
     parse_tool_use,
 };
 use crate::text_normalization::{TaggedTextFragment, TaggedTextParser};
+use crate::ProviderError;
 
 /// Formats the richest possible error message for a failed streaming request.
 ///
@@ -26,30 +26,32 @@ use crate::text_normalization::{TaggedTextFragment, TaggedTextParser};
 /// (e.g. "No auth credentials found" from OpenRouter). Consuming the
 /// `Response` by value lets us drain it; we truncate to 4 KiB so a runaway
 /// error body doesn't blow up the error message.
-async fn build_stream_error(model: &str, error: reqwest_eventsource::Error) -> anyhow::Error {
+async fn build_stream_error(model: &str, error: reqwest_eventsource::Error) -> ProviderError {
     match error {
         reqwest_eventsource::Error::InvalidStatusCode(status, response) => {
-            let body = read_body_preview(response).await;
-            match body {
-                Some(body) => {
-                    anyhow::anyhow!("openai stream error for model {model}: HTTP {status}: {body}")
-                }
-                None => anyhow::anyhow!("openai stream error for model {model}: HTTP {status}"),
-            }
+            // Pass the raw body to `from_http_status` so it can classify the
+            // failure (rate-limited, context-too-long, auth, 5xx, …) instead
+            // of wrapping it as a generic message. The `{model}` context lives
+            // in the query-loop log line, not in the error variant.
+            let body = read_body_preview(response).await.unwrap_or_default();
+            ProviderError::from_http_status(status.as_u16(), &body)
         }
         reqwest_eventsource::Error::InvalidContentType(_, response) => {
             let status = response.status();
             let body = read_body_preview(response).await;
-            match body {
-                Some(body) => anyhow::anyhow!(
+            let message = match body {
+                Some(body) => format!(
                     "openai stream error for model {model}: unexpected content-type (HTTP {status}): {body}"
                 ),
-                None => anyhow::anyhow!(
+                None => format!(
                     "openai stream error for model {model}: unexpected content-type (HTTP {status})"
                 ),
-            }
+            };
+            ProviderError::StreamError { message }
         }
-        other => anyhow::anyhow!("openai stream error for model {model}: {other}"),
+        other => ProviderError::StreamError {
+            message: format!("openai stream error for model {model}: {other}"),
+        },
     }
 }
 
@@ -108,7 +110,7 @@ async fn read_body_preview(response: reqwest::Response) -> Option<String> {
 pub(super) async fn completion_stream(
     provider: &OpenAIProvider,
     request: ModelRequest,
-) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>> {
+) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> + Send>>, ProviderError> {
     let body = build_request(&request, true);
     tracing::debug!(
         provider = "openai",
@@ -122,7 +124,9 @@ pub(super) async fn completion_stream(
     );
 
     let event_source = EventSource::new(provider.request_builder(&body))
-        .context("failed to create openai event source")?;
+        .map_err(|err| ProviderError::StreamError {
+            message: format!("failed to create openai event source: {err}"),
+        })?;
     let stream = async_stream::try_stream! {
         let mut state = ChatCompletionStreamState::default();
 
@@ -145,7 +149,9 @@ pub(super) async fn completion_stream(
 
                     let chunk: ChatCompletionStreamChunk = serde_json::from_str(&message.data)
                         .map_err(|error| {
-                            anyhow::anyhow!("failed to parse openai stream chunk: {error}")
+                            ProviderError::StreamError {
+                                message: format!("failed to parse openai stream chunk: {error}"),
+                            }
                         })?;
 
                     for stream_event in state.apply_chunk(chunk) {
@@ -757,10 +763,10 @@ mod tests {
         assert_eq!(response.usage.input_tokens, 0);
         assert_eq!(response.usage.output_tokens, 0);
         assert_eq!(response.content.len(), 1);
-        match &response.content[0] {
-            ResponseContent::Text(text) => assert_eq!(text, "Hello world"),
-            other => panic!("expected text content, got {other:?}"),
-        }
+        assert!(matches!(
+            &response.content[0],
+            ResponseContent::Text(t) if t == "Hello world"
+        ));
     }
 
     #[test]
@@ -823,13 +829,12 @@ mod tests {
         let response = state.into_response();
         assert_eq!(response.stop_reason, Some(StopReason::ToolUse));
         assert_eq!(response.content.len(), 1);
-        match &response.content[0] {
-            ResponseContent::ToolUse { id, name, input } => {
-                assert_eq!(id, "call_123");
-                assert_eq!(name, "get_weather");
-                assert_eq!(input, &json!({"city": "Boston"}));
-            }
-            other => panic!("expected tool content, got {other:?}"),
+        if let ResponseContent::ToolUse { id, name, input } = &response.content[0] {
+            assert_eq!(id, "call_123");
+            assert_eq!(name, "get_weather");
+            assert_eq!(input, &json!({"city": "Boston"}));
+        } else {
+            panic!("expected tool content, got {:?}", response.content[0]);
         }
     }
 
@@ -886,13 +891,12 @@ mod tests {
         assert_eq!(response.usage.output_tokens, 7);
         assert_eq!(response.usage.cache_read_input_tokens, Some(3));
         assert_eq!(response.content.len(), 1);
-        match &response.content[0] {
-            ResponseContent::ToolUse { id, name, input } => {
-                assert_eq!(id, "call_bad");
-                assert_eq!(name, "broken_tool");
-                assert_eq!(input, &json!({}));
-            }
-            other => panic!("expected tool content, got {other:?}"),
+        if let ResponseContent::ToolUse { id, name, input } = &response.content[0] {
+            assert_eq!(id, "call_bad");
+            assert_eq!(name, "broken_tool");
+            assert_eq!(input, &json!({}));
+        } else {
+            panic!("expected tool content, got {:?}", response.content[0]);
         }
         assert!(response.metadata.extras.iter().any(|extra| matches!(
             extra,
@@ -1039,13 +1043,12 @@ mod tests {
         ));
 
         let response = state.into_response();
-        match &response.content[0] {
-            ResponseContent::ToolUse { id, name, input } => {
-                assert_eq!(id, "call_custom");
-                assert_eq!(name, "draft_sql");
-                assert_eq!(input, &json!("select *"));
-            }
-            other => panic!("expected custom tool content, got {other:?}"),
+        if let ResponseContent::ToolUse { id, name, input } = &response.content[0] {
+            assert_eq!(id, "call_custom");
+            assert_eq!(name, "draft_sql");
+            assert_eq!(input, &json!("select *"));
+        } else {
+            panic!("expected custom tool content, got {:?}", response.content[0]);
         }
     }
 

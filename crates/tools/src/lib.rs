@@ -15,8 +15,6 @@ mod registry;
 mod runtime;
 mod shell_exec;
 mod skill;
-#[allow(dead_code)]
-mod spec;
 mod task;
 mod todo;
 mod tool;

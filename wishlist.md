@@ -13,7 +13,7 @@ Totals: 405 unit + integration tests (+86 from baseline), all green.
 - OAuth 2.1 / PKCE / device flow.
 - MCP resources + prompts (`read_resource` currently returns `McpResourceReadFailed { message: "not implemented" }`).
 - Sampling, elicitation, roots notifications.
-- `mcp/list`, `mcp/refresh`, `mcp/reload` server RPCs (Phase 9 of the plan — deferred; requires `runtime.rs` split).
+- `mcp/list`, `mcp/refresh`, `mcp/reload` server RPCs (Phase 9 of the plan — deferred; `runtime.rs` split is now done, so this is unblocked).
 - TUI `/mcp` slash command.
 - Hot reload of MCP tools into an in-flight session.
 
@@ -70,9 +70,9 @@ End-to-end approval workflow: tool needs permission → orchestrator suspends �
 
 ## 4. OS-Level Sandboxing
 
-The spec defines `SandboxMode::Restricted/External` but nothing is implemented. Platform-specific sandboxing (seccomp on Linux, seatbelt on macOS, restricted tokens on Windows) would make the agent safe to run untrusted code.
+The spec defines `SandboxMode::Restricted/External` but nothing is implemented. Platform-specific sandboxing (seccomp/landlock on Linux, seatbelt/sandbox-exec on macOS, restricted tokens on Windows) would make the agent safe to run untrusted code.
 
-**Status:** Not started
+**Status:** Not started. Types exist in `crates/safety/src/lib.rs`: `SandboxMode` enum (`Unrestricted`/`Restricted`/`External`), `SandboxPolicyRecord`, `NetworkPolicy`. Nothing enforces them at process-spawn time.
 
 ## 5. Web/Desktop Client
 
@@ -84,7 +84,7 @@ The server already speaks JSON-RPC over WebSocket. A web frontend or Electron ap
 
 `TaskTool` is a stub that returns an acknowledgment. Implementing actual subagent dispatch (spawn a child agent with scoped context, collect results) would enable complex multi-step workflows.
 
-**Status:** Not started
+**Status:** Not started. The `lpa-tasks` crate has scaffolding (`Task` trait, `TaskManager` with lifecycle tracking, `TaskNotification` — fully tested but not wired). `TaskTool` in `crates/tools/src/task.rs` is intentionally not registered in `register_builtin_tools()`. Key blocker: `ToolContext` lacks access to `Arc<dyn ModelProviderSDK>` and `Arc<ToolRegistry>`, which a nested `query()` call would need.
 
 ## 7. LSP Integration
 
@@ -96,7 +96,7 @@ The server already speaks JSON-RPC over WebSocket. A web frontend or Electron ap
 
 `ToolProgressEvent` types exist but aren't wired. Adding real-time progress events (especially for long-running bash/patch operations) would improve UX significantly.
 
-**Status:** Not started
+**Status:** Not started. `ToolProgressEvent` enum (`Status`/`ByteProgress`/`SubCommand`) defined in `crates/tools/src/tool.rs`. `ToolProgressReporter` trait + `NullToolProgressReporter` in `crates/tools/src/runtime/types.rs`. `RuntimeToolExecutor` always uses the null reporter. No `QueryEvent` variant exists for progress. Protocol layer has `ItemDeltaKind::CommandExecutionOutputDelta` ready as a wire carrier.
 
 ## 9. Git Ghost Snapshots
 
@@ -166,6 +166,38 @@ Full Google Gemini integration across all 4 phases. Users can configure via `GEM
 **Phase 4 — Model catalog:**
 - `crates/core/models.json` — Gemini 2.5 Pro (thinking toggle, 1M ctx, 64K output), Gemini 2.5 Flash (thinking toggle, 1M ctx, 64K output), Gemini 2.0 Flash (non-thinking, 1M ctx, 8K output)
 
+### Codebase Hardening & Architecture Overhaul (Complete — 2026-04-21)
+
+**419 tests pass, zero clippy warnings.**
+
+#### Typed Provider Errors
+Replaced the entire string-matching error classification system (~70 lines of `classify_error()` parsing `"429"`, `"context_too_long"`, etc.) with a structured `ProviderError` enum (11 variants) in `crates/provider/src/error.rs`. The `ModelProviderSDK` trait now returns `Result<_, ProviderError>` instead of `anyhow::Result`. All three providers (Anthropic, OpenAI, Google) map HTTP status codes to typed variants. `AgentError::Provider` wraps `ProviderError` instead of `anyhow::Error`. The `ErrorClass` enum and `classify_error()` function deleted from `query.rs`.
+
+#### Strict Tool Input Validation
+8 tools that silently defaulted required parameters to empty values (`unwrap_or("")` / `unwrap_or_default()`) now return errors: `websearch`, `todo`, `question`, `skill`, `apply_patch`, `webfetch`, `lsp`, `task`.
+
+#### Dead Code Removal
+Deleted `crates/tools/src/spec.rs` (540 lines) — an earlier draft of the runtime tool system completely superseded by `runtime/types.rs` + `runtime/registry.rs`.
+
+#### Memory Leak Fixes
+Replaced `Box::leak` in `BashTool::description()` and `WebSearchTool::description()` with `OnceLock<String>` — computed once, cached, no leak.
+
+#### Shell Detection
+`platform_shell()` in `shell_exec.rs` now reads `$SHELL` on Unix to detect zsh/fish instead of hardcoding bash.
+
+#### Test Cleanup
+Replaced 10 `panic!` calls in provider test code with proper assertion patterns (`assert!(matches!(...))` and `if let ... else { panic! }`).
+
+#### File Splitting (5 files, ~5800 lines total split across 28 new modules)
+- `apply_patch.rs` (1490 → ~170): `apply_patch/{mod,types,parse,apply,hunk_match,tests}.rs`
+- `server/src/runtime.rs` (2187 → ~170): `runtime/{handlers_session,handlers_turn,handlers_events,execute_turn,session_titles,items,connection_runtime}.rs`
+- `tui/src/worker.rs` (1326 → ~530): `worker/{mod,event_mapping,tool_render,history,provider_validate,tests}.rs`
+- `tui/src/selection.rs` (1249 → ~140): `selection/{mod,model,slash_commands,onboarding,panel_accept,rollout_files}.rs`
+- `core/src/query.rs` (1147 → ~480): `query/{mod,compaction,prefetch,connection_test,tests}.rs`
+
+#### Hierarchical AGENTS.md Loading
+`load_prompt_md()` in `crates/core/src/query/prefetch.rs` now walks from `cwd` upward to the project root (detected via `.git` or configured `project_root_markers`), collecting all `AGENTS.md`/`CLAUDE.md` files. Loads in order: root → ... → cwd (most specific last). Deduplicates by canonical path. Falls back to single-directory loading when no project root is found.
+
 ---
 
 ## Reference: Where will we land vs. Crush / Claude Code?
@@ -183,7 +215,7 @@ These are the likely "I miss this" items after a week of dogfooding:
 | **Hooks system** (PreToolUse / PostToolUse / SessionStart / Stop / UserPromptSubmit / etc.) | Not present | Power users live in hooks — deterministic guardrails, custom automation, shell integrations. Big gap. |
 | **Rich slash command set** (`/agents`, `/cost`, `/mcp`, `/model`, `/memory`, `/compact`, `/hooks`, `/doctor`) | Partial — basic commands only | Discoverability + day-to-day ergonomics. |
 | **Skills / plugin ecosystem** | Partial — skills are discovered from disk (`crates/core/src/skills.rs`), no install / marketplace story | Claude Code's skills are a significant multiplier for real workflows. |
-| **`CLAUDE.md` / `AGENTS.md` hierarchical auto-load** | Partial — only current workspace root (see TODO in `crates/core/src/query.rs:~214`) | Parent-dir walk + home-dir fallback + merge order matter in monorepos. |
+| **`CLAUDE.md` / `AGENTS.md` hierarchical auto-load** | DONE — walks cwd upward to project root (`.git`), loads all instruction files | Was a monorepo gap, now handled. |
 | **Image paste into chat** | Not present | Design reviews, screenshot debugging, vision-model workflows. |
 | **`WebSearch` tool** | Only `WebFetch` | Agent can't answer "what's the current state of X?" without a search step. |
 | **Output styles / personality modes** | Not present | Low priority but a visible polish gap. |

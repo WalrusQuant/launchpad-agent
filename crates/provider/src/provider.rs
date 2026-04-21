@@ -4,6 +4,8 @@ use async_trait::async_trait;
 use futures::Stream;
 use lpa_protocol::{ModelRequest, ModelResponse, ProviderFamily, RequestRole, StreamEvent};
 
+use crate::ProviderError;
+
 /// Capability flags that describe what a provider family or model can emit.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProviderCapabilities {
@@ -103,7 +105,7 @@ pub trait ProviderAdapter: ModelProviderSDK {
 #[async_trait]
 pub trait ModelProviderSDK: Send + Sync {
     /// Send a request and get a complete response.
-    async fn completion(&self, request: ModelRequest) -> anyhow::Result<ModelResponse>;
+    async fn completion(&self, request: ModelRequest) -> Result<ModelResponse, ProviderError>;
 
     /// Send a request and get a stream of incremental events.
     ///
@@ -112,7 +114,7 @@ pub trait ModelProviderSDK: Send + Sync {
     async fn completion_stream(
         &self,
         request: ModelRequest,
-    ) -> anyhow::Result<Pin<Box<dyn Stream<Item = anyhow::Result<StreamEvent>> + Send>>>;
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> + Send>>, ProviderError>;
 
     /// Human-readable provider name (e.g. "anthropic", "openai").
     fn name(&self) -> &str;
