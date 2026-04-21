@@ -3,13 +3,13 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use lpa_provider::ProviderError;
 use async_trait::async_trait;
 use futures::Stream;
 use lpa_protocol::{
     ModelRequest, ModelResponse, ResponseContent, ResponseExtra, ResponseMetadata, StopReason,
     StreamEvent, Usage,
 };
+use lpa_provider::ProviderError;
 use lpa_safety::legacy_permissions::PermissionMode;
 use lpa_tools::{Tool, ToolOrchestrator, ToolOutput, ToolRegistry};
 use pretty_assertions::assert_eq;
@@ -35,7 +35,8 @@ impl lpa_provider::ModelProviderSDK for SingleToolUseProvider {
     async fn completion_stream(
         &self,
         _request: ModelRequest,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> + Send>>, ProviderError> {
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> + Send>>, ProviderError>
+    {
         let request_number = self.requests.fetch_add(1, Ordering::SeqCst);
 
         let events = if request_number == 0 {
@@ -105,7 +106,8 @@ impl lpa_provider::ModelProviderSDK for CapturingProvider {
     async fn completion_stream(
         &self,
         request: ModelRequest,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> + Send>>, ProviderError> {
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> + Send>>, ProviderError>
+    {
         self.requests.lock().expect("lock requests").push(request);
         Ok(Box::pin(futures::stream::iter(vec![Ok(
             StreamEvent::MessageDone {
@@ -325,7 +327,10 @@ async fn query_emits_reasoning_without_polluting_assistant_message_content() {
         async fn completion_stream(
             &self,
             _request: ModelRequest,
-        ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> + Send>>, ProviderError> {
+        ) -> Result<
+            Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> + Send>>,
+            ProviderError,
+        > {
             Ok(Box::pin(futures::stream::iter(vec![
                 Ok(StreamEvent::ReasoningStart { index: 0 }),
                 Ok(StreamEvent::ReasoningDelta {

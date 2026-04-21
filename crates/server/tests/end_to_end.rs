@@ -55,13 +55,19 @@ struct PendingProvider;
 #[async_trait]
 impl ModelProviderSDK for PendingProvider {
     async fn completion(&self, _request: ModelRequest) -> Result<ModelResponse, ProviderError> {
-        Err(ProviderError::Other { message: "test provider does not support completion".into(), source: None })
+        Err(ProviderError::Other {
+            message: "test provider does not support completion".into(),
+            source: None,
+        })
     }
 
     async fn completion_stream(
         &self,
         _request: ModelRequest,
-    ) -> Result<std::pin::Pin<Box<dyn futures::Stream<Item = Result<StreamEvent, ProviderError>> + Send>>, ProviderError> {
+    ) -> Result<
+        std::pin::Pin<Box<dyn futures::Stream<Item = Result<StreamEvent, ProviderError>> + Send>>,
+        ProviderError,
+    > {
         Ok(Box::pin(stream::pending()))
     }
 

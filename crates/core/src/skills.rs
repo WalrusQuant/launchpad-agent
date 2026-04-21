@@ -152,14 +152,24 @@ impl FileSystemSkillCatalog {
             });
         }
 
-        let mut discovered = Vec::new();
-        for entry in fs::read_dir(root).map_err(|_| SkillError::SkillRootUnavailable {
-            root: root.to_path_buf(),
-        })? {
-            let entry = entry.map_err(|_| SkillError::SkillRootUnavailable {
+        // `fs::read_dir` returns entries in filesystem-defined order — stable on
+        // macOS APFS, hash-order on Linux ext4. Sort paths so discovery results
+        // (and duplicate-detection errors) are reproducible across platforms.
+        let mut entries: Vec<PathBuf> = fs::read_dir(root)
+            .map_err(|_| SkillError::SkillRootUnavailable {
                 root: root.to_path_buf(),
-            })?;
-            let path = entry.path();
+            })?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| SkillError::SkillRootUnavailable {
+                root: root.to_path_buf(),
+            })?
+            .into_iter()
+            .map(|entry| entry.path())
+            .collect();
+        entries.sort();
+
+        let mut discovered = Vec::new();
+        for path in entries {
             if path.is_dir() {
                 let skill_doc = path.join("SKILL.md");
                 if skill_doc.exists() {

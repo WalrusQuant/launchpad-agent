@@ -5,10 +5,10 @@ use lpa_safety::legacy_permissions::{PermissionMode, RuleBasedPolicy};
 use pretty_assertions::assert_eq;
 use serde_json::json;
 
+use super::ApplyPatchTool;
 use super::apply::{apply_hunks, resolve_relative};
 use super::parse::parse_patch;
 use super::types::{HunkLine, PatchHunk, PatchKind};
-use super::ApplyPatchTool;
 use crate::{Tool, ToolContext};
 
 fn unique_temp_dir(name: &str) -> std::path::PathBuf {
@@ -111,9 +111,7 @@ index 1234567..89abcde 100644
         vec![
             HunkLine::Context("use crate::{Tool, ToolContext, ToolOutput};".to_string()),
             HunkLine::Context(String::new()),
-            HunkLine::Context(
-                "const DESCRIPTION: &str = include_str!(\"read.txt\");".to_string()
-            ),
+            HunkLine::Context("const DESCRIPTION: &str = include_str!(\"read.txt\");".to_string()),
             HunkLine::Remove("const MAX_LINE_LENGTH: usize = 2000;".to_string()),
             HunkLine::Add("const MAX_BYTES: usize = 50 * 1024;".to_string()),
         ]

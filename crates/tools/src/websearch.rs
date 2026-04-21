@@ -18,10 +18,8 @@ impl Tool for WebSearchTool {
     }
 
     fn description(&self) -> &str {
-        CACHED_DESCRIPTION.get_or_init(|| {
-            DESCRIPTION
-                .replace("{{year}}", &chrono::Utc::now().year().to_string())
-        })
+        CACHED_DESCRIPTION
+            .get_or_init(|| DESCRIPTION.replace("{{year}}", &chrono::Utc::now().year().to_string()))
     }
 
     fn input_schema(&self) -> serde_json::Value {
@@ -43,7 +41,9 @@ impl Tool for WebSearchTool {
         _ctx: &ToolContext,
         input: serde_json::Value,
     ) -> anyhow::Result<ToolOutput> {
-        let query = input["query"].as_str().ok_or_else(|| anyhow::anyhow!("missing 'query' field"))?;
+        let query = input["query"]
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("missing 'query' field"))?;
         let client = reqwest::Client::new();
         let payload = json!({
             "jsonrpc": "2.0",

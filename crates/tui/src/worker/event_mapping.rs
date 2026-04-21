@@ -22,7 +22,10 @@ pub(super) fn completed_agent_message_text(payload: &ItemEventPayload) -> Option
     }
 }
 
-pub(super) fn handle_completed_item(payload: ItemEventPayload, event_tx: &mpsc::UnboundedSender<WorkerEvent>) {
+pub(super) fn handle_completed_item(
+    payload: ItemEventPayload,
+    event_tx: &mpsc::UnboundedSender<WorkerEvent>,
+) {
     match payload.item {
         ItemEnvelope {
             item_kind: ItemKind::AgentMessage,

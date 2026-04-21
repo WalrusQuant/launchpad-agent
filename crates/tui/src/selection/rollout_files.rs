@@ -72,7 +72,9 @@ pub(super) fn walk_rollout_files(root: &std::path::Path) -> Result<Vec<std::path
     Ok(files)
 }
 
-pub(super) fn read_rollout_session_entry(path: &std::path::Path) -> Result<Option<SessionListEntry>> {
+pub(super) fn read_rollout_session_entry(
+    path: &std::path::Path,
+) -> Result<Option<SessionListEntry>> {
     let file = std::fs::File::open(path)?;
     let reader = BufReader::new(file).lines();
     let mut session_id = None;

@@ -110,7 +110,6 @@ pub fn warn_compaction_failed(error: &CompactionError) {
 
 #[cfg(test)]
 mod tests {
-    use lpa_provider::ProviderError;
     use super::*;
     use async_trait::async_trait;
     use futures::Stream;
@@ -118,6 +117,7 @@ mod tests {
         ModelRequest, ModelResponse, ResponseContent, ResponseMetadata, StopReason, StreamEvent,
         Usage,
     };
+    use lpa_provider::ProviderError;
     use pretty_assertions::assert_eq;
     use std::pin::Pin;
     use std::sync::Mutex;
@@ -158,8 +158,10 @@ mod tests {
         async fn completion_stream(
             &self,
             _request: ModelRequest,
-        ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> + Send>>, ProviderError>
-        {
+        ) -> Result<
+            Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> + Send>>,
+            ProviderError,
+        > {
             unimplemented!("not used")
         }
 

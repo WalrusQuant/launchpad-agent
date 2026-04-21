@@ -3,19 +3,14 @@ use std::sync::Arc;
 use chrono::Utc;
 use tokio::sync::Mutex;
 
-use lpa_core::{
-    SessionId, SessionTitleFinalSource, SessionTitleState,
-};
+use lpa_core::{SessionId, SessionTitleFinalSource, SessionTitleState};
 
 use crate::{
-    ConnectionState, ProtocolErrorCode,
-    SuccessResponse,
-    execution::RuntimeSession,
+    ConnectionState, ProtocolErrorCode, ServerEvent, SessionEventPayload, SessionForkParams,
+    SessionForkResult, SessionListParams, SessionListResult, SessionResumeParams,
+    SessionResumeResult, SessionRuntimeStatus, SessionStartParams, SessionStartResult,
+    SessionTitleUpdateParams, SessionTitleUpdateResult, SuccessResponse, execution::RuntimeSession,
     session::SessionSummary,
-    SessionEventPayload, SessionForkParams, SessionForkResult, SessionListParams,
-    SessionListResult, SessionResumeParams, SessionResumeResult, SessionRuntimeStatus,
-    SessionStartParams, SessionStartResult, SessionTitleUpdateParams,
-    SessionTitleUpdateResult, ServerEvent,
 };
 
 use super::ServerRuntime;

@@ -174,7 +174,10 @@ pub(super) fn build_prefetched_user_inputs(cwd: &Path) -> Vec<UserInput> {
     inputs
 }
 
-pub(super) fn append_prefetched_user_inputs(messages: &mut Vec<RequestMessage>, user_inputs: &[UserInput]) {
+pub(super) fn append_prefetched_user_inputs(
+    messages: &mut Vec<RequestMessage>,
+    user_inputs: &[UserInput],
+) {
     messages.splice(
         0..0,
         user_inputs.iter().filter_map(|input| match input {

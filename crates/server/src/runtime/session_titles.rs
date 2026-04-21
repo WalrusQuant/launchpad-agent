@@ -2,9 +2,7 @@ use std::sync::Arc;
 
 use chrono::Utc;
 
-use lpa_core::{
-    SessionId, SessionTitleFinalSource, SessionTitleState,
-};
+use lpa_core::{SessionId, SessionTitleFinalSource, SessionTitleState};
 
 use crate::{
     ServerEvent, SessionEventPayload,
@@ -14,7 +12,11 @@ use crate::{
 use super::ServerRuntime;
 
 impl ServerRuntime {
-    pub(super) async fn maybe_assign_provisional_title(&self, session_id: SessionId, first_user_input: &str) {
+    pub(super) async fn maybe_assign_provisional_title(
+        &self,
+        session_id: SessionId,
+        first_user_input: &str,
+    ) {
         let Some(candidate) = derive_provisional_title(first_user_input) else {
             return;
         };

@@ -30,7 +30,9 @@ impl Tool for QuestionTool {
         _ctx: &ToolContext,
         input: serde_json::Value,
     ) -> anyhow::Result<ToolOutput> {
-        let question = input["question"].as_str().ok_or_else(|| anyhow::anyhow!("missing 'question' field"))?;
+        let question = input["question"]
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("missing 'question' field"))?;
         Ok(ToolOutput::success(format!(
             "Question for user: {question}"
         )))

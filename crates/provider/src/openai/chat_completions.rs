@@ -16,7 +16,9 @@ use lpa_protocol::{
 use super::capabilities::{OpenAIReasoningMode, OpenAITransport, resolve_request_profile};
 use super::shared::{reasoning_value, request_role, tool_definitions};
 use crate::text_normalization::split_tagged_text;
-use crate::{ModelProviderSDK, ProviderAdapter, ProviderCapabilities, ProviderError, merge_extra_body};
+use crate::{
+    ModelProviderSDK, ProviderAdapter, ProviderCapabilities, ProviderError, merge_extra_body,
+};
 
 /// OpenAI chat-completion provider backed by the official HTTP API.
 /// <https://developers.openai.com/api/reference/chat-completions/overview>
@@ -731,8 +733,8 @@ fn build_request(request: &ModelRequest, stream: bool) -> Value {
 ///   `service_tier`, `annotations`, `audio`, `logprobs`, and deprecated
 ///   `function_call` are not currently mapped into `ModelResponse`.
 fn parse_response(value: Value) -> Result<ModelResponse, ProviderError> {
-    let response: OpenAIChatCompletionResponse = serde_json::from_value(value.clone())
-        .map_err(|err| ProviderError::Other {
+    let response: OpenAIChatCompletionResponse =
+        serde_json::from_value(value.clone()).map_err(|err| ProviderError::Other {
             message: format!("failed to deserialize openai chat-completion response: {err}"),
             source: None,
         })?;
@@ -1017,14 +1019,14 @@ impl ModelProviderSDK for OpenAIProvider {
             "sending openai completion request"
         );
 
-        let response = self
-            .request_builder(&body)
-            .send()
-            .await
-            .map_err(|err| ProviderError::Other {
-                message: format!("failed to send openai request: {err}"),
-                source: Some(err.into()),
-            })?;
+        let response =
+            self.request_builder(&body)
+                .send()
+                .await
+                .map_err(|err| ProviderError::Other {
+                    message: format!("failed to send openai request: {err}"),
+                    source: Some(err.into()),
+                })?;
 
         let status = response.status();
         if !status.is_success() {
@@ -1050,7 +1052,8 @@ impl ModelProviderSDK for OpenAIProvider {
     async fn completion_stream(
         &self,
         request: ModelRequest,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> + Send>>, ProviderError> {
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> + Send>>, ProviderError>
+    {
         stream::completion_stream(self, request).await
     }
 

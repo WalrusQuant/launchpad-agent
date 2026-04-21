@@ -14,7 +14,9 @@ use serde_json::{Value, json};
 use tracing::debug;
 
 use super::GoogleRole;
-use crate::{ModelProviderSDK, ProviderAdapter, ProviderCapabilities, ProviderError, merge_extra_body};
+use crate::{
+    ModelProviderSDK, ProviderAdapter, ProviderCapabilities, ProviderError, merge_extra_body,
+};
 
 pub struct GoogleProvider {
     client: Client,
@@ -103,7 +105,8 @@ impl ModelProviderSDK for GoogleProvider {
     async fn completion_stream(
         &self,
         request: ModelRequest,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> + Send>>, ProviderError> {
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> + Send>>, ProviderError>
+    {
         let body = build_request(&request);
         let url = self.stream_generate_content_endpoint(&request.model);
         debug!(
@@ -116,11 +119,12 @@ impl ModelProviderSDK for GoogleProvider {
             "sending google streaming request"
         );
 
-        let event_source = EventSource::new(self.request_builder(&url, &body))
-            .map_err(|err| ProviderError::Other {
+        let event_source = EventSource::new(self.request_builder(&url, &body)).map_err(|err| {
+            ProviderError::Other {
                 message: "failed to create google event source".to_string(),
                 source: Some(err.into()),
-            })?;
+            }
+        })?;
 
         let stream = async_stream::try_stream! {
             let mut response_id = String::new();

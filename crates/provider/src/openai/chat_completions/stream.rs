@@ -16,8 +16,8 @@ use super::{
     OpenAIProvider, build_provider_specific_response_payload, build_request, parse_finish_reason,
     parse_tool_use,
 };
-use crate::text_normalization::{TaggedTextFragment, TaggedTextParser};
 use crate::ProviderError;
+use crate::text_normalization::{TaggedTextFragment, TaggedTextParser};
 
 /// Formats the richest possible error message for a failed streaming request.
 ///
@@ -123,10 +123,11 @@ pub(super) async fn completion_stream(
         "sending openai streaming request"
     );
 
-    let event_source = EventSource::new(provider.request_builder(&body))
-        .map_err(|err| ProviderError::StreamError {
+    let event_source = EventSource::new(provider.request_builder(&body)).map_err(|err| {
+        ProviderError::StreamError {
             message: format!("failed to create openai event source: {err}"),
-        })?;
+        }
+    })?;
     let stream = async_stream::try_stream! {
         let mut state = ChatCompletionStreamState::default();
 
@@ -1048,7 +1049,10 @@ mod tests {
             assert_eq!(name, "draft_sql");
             assert_eq!(input, &json!("select *"));
         } else {
-            panic!("expected custom tool content, got {:?}", response.content[0]);
+            panic!(
+                "expected custom tool content, got {:?}",
+                response.content[0]
+            );
         }
     }
 

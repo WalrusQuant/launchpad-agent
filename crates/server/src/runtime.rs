@@ -10,8 +10,7 @@ use std::{
 use tokio::sync::{Mutex, mpsc};
 
 use crate::{
-    ClientTransportKind, ConnectionState, InitializeResult,
-    ProtocolErrorCode, ServerCapabilities,
+    ClientTransportKind, ConnectionState, InitializeResult, ProtocolErrorCode, ServerCapabilities,
     approval::SharedApprovalManager,
     execution::{RuntimeSession, ServerRuntimeDependencies},
     persistence::RolloutStore,
@@ -63,9 +62,7 @@ impl ServerRuntime {
             connections: Mutex::new(HashMap::new()),
             active_tasks: Mutex::new(HashMap::new()),
             next_connection_id: AtomicU64::new(1),
-            approval_manager: Arc::new(Mutex::new(
-                crate::approval::ApprovalManager::new(),
-            )),
+            approval_manager: Arc::new(Mutex::new(crate::approval::ApprovalManager::new())),
         })
     }
 

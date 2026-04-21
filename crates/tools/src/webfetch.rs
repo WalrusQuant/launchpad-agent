@@ -39,7 +39,9 @@ impl Tool for WebFetchTool {
         _ctx: &ToolContext,
         input: serde_json::Value,
     ) -> anyhow::Result<ToolOutput> {
-        let url = input["url"].as_str().ok_or_else(|| anyhow::anyhow!("missing 'url' field"))?;
+        let url = input["url"]
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("missing 'url' field"))?;
         if !(url.starts_with("http://") || url.starts_with("https://")) {
             return Ok(ToolOutput::error("URL must start with http:// or https://"));
         }

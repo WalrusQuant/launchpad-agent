@@ -17,7 +17,9 @@ use serde_json::{Value, json};
 use tracing::debug;
 
 use super::AnthropicAIRole;
-use crate::{ModelProviderSDK, ProviderAdapter, ProviderCapabilities, ProviderError, merge_extra_body};
+use crate::{
+    ModelProviderSDK, ProviderAdapter, ProviderCapabilities, ProviderError, merge_extra_body,
+};
 
 /// <https://platform.claude.com/docs/en/api/messages>
 /// Anthropic provider backed by the official HTTP API.
@@ -236,14 +238,14 @@ impl ModelProviderSDK for AnthropicProvider {
             "sending anthropic completion request"
         );
 
-        let response = self
-            .request_builder(&body)
-            .send()
-            .await
-            .map_err(|err| ProviderError::Other {
-                message: "failed to send anthropic request".to_string(),
-                source: Some(err.into()),
-            })?;
+        let response =
+            self.request_builder(&body)
+                .send()
+                .await
+                .map_err(|err| ProviderError::Other {
+                    message: "failed to send anthropic request".to_string(),
+                    source: Some(err.into()),
+                })?;
 
         let status = response.status();
         if !status.is_success() {
@@ -262,7 +264,8 @@ impl ModelProviderSDK for AnthropicProvider {
     async fn completion_stream(
         &self,
         request: ModelRequest,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> + Send>>, ProviderError> {
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> + Send>>, ProviderError>
+    {
         let body = build_request(&request, true);
         debug!(
             provider = "anthropic",
@@ -780,12 +783,11 @@ fn build_request(request: &ModelRequest, stream: bool) -> Value {
 ///}
 /// ```
 fn parse_response(value: Value) -> Result<ModelResponse, ProviderError> {
-    let response: AnthropicMessageResponse = serde_json::from_value(value.clone()).map_err(|error| {
-        ProviderError::Other {
+    let response: AnthropicMessageResponse =
+        serde_json::from_value(value.clone()).map_err(|error| ProviderError::Other {
             message: "failed to deserialize anthropic messages response".to_string(),
             source: Some(error.into()),
-        }
-    })?;
+        })?;
     let mut content = Vec::new();
     let mut metadata = ResponseMetadata::default();
 

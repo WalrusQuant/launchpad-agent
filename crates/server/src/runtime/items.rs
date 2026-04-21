@@ -2,8 +2,7 @@ use lpa_core::{ItemId, SessionId, TurnId, TurnItem, TurnStatus, Worklog};
 
 use crate::{
     EventContext, ItemEnvelope, ItemEventPayload, ItemKind, ServerEvent,
-    persistence::build_item_record,
-    projection::history_item_from_turn_item,
+    persistence::build_item_record, projection::history_item_from_turn_item,
 };
 
 use super::ServerRuntime;

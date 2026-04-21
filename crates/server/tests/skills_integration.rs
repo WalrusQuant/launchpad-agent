@@ -51,7 +51,10 @@ impl ModelProviderSDK for CapturingProvider {
     async fn completion_stream(
         &self,
         request: ModelRequest,
-    ) -> Result<Pin<Box<dyn futures::Stream<Item = Result<StreamEvent, ProviderError>> + Send>>, ProviderError> {
+    ) -> Result<
+        Pin<Box<dyn futures::Stream<Item = Result<StreamEvent, ProviderError>> + Send>>,
+        ProviderError,
+    > {
         self.stream_requests
             .lock()
             .expect("stream request lock")
@@ -294,7 +297,10 @@ impl ModelProviderSDK for SteerCapturingProvider {
     async fn completion_stream(
         &self,
         request: ModelRequest,
-    ) -> Result<Pin<Box<dyn futures::Stream<Item = Result<StreamEvent, ProviderError>> + Send>>, ProviderError> {
+    ) -> Result<
+        Pin<Box<dyn futures::Stream<Item = Result<StreamEvent, ProviderError>> + Send>>,
+        ProviderError,
+    > {
         let request_number = {
             let mut requests = self.stream_requests.lock().expect("stream request lock");
             requests.push(request);

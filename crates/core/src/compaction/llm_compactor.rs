@@ -228,8 +228,10 @@ mod tests {
         async fn completion_stream(
             &self,
             _request: ModelRequest,
-        ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> + Send>>, ProviderError>
-        {
+        ) -> Result<
+            Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> + Send>>,
+            ProviderError,
+        > {
             unimplemented!("streaming not exercised by compactor tests")
         }
 
@@ -317,7 +319,10 @@ mod tests {
 
     #[tokio::test]
     async fn compact_surfaces_provider_errors() {
-        let provider = StubProvider::with_response(Err(ProviderError::ServerError { message: "upstream 503".to_string(), status_code: Some(503) }));
+        let provider = StubProvider::with_response(Err(ProviderError::ServerError {
+            message: "upstream 503".to_string(),
+            status_code: Some(503),
+        }));
         let compactor = LlmContextCompactor::new(provider, "m");
         let result = compactor
             .compact(history(&["[user] hi\n"]), TokenBudget::default())

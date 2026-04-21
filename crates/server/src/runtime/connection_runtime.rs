@@ -4,9 +4,7 @@ use tokio::sync::mpsc;
 
 use lpa_core::SessionId;
 
-use crate::{
-    ClientTransportKind, ConnectionState, NotificationEnvelope, ServerEvent,
-};
+use crate::{ClientTransportKind, ConnectionState, NotificationEnvelope, ServerEvent};
 
 pub(super) struct ConnectionRuntime {
     pub(super) transport: ClientTransportKind,
@@ -82,7 +80,12 @@ impl ServerRuntime {
             .is_some_and(|connection| connection.state == ConnectionState::Ready)
     }
 
-    pub(super) async fn emit_to_connection(&self, connection_id: u64, method: &str, event: ServerEvent) {
+    pub(super) async fn emit_to_connection(
+        &self,
+        connection_id: u64,
+        method: &str,
+        event: ServerEvent,
+    ) {
         let session_id = event.session_id();
         let mut connections = self.connections.lock().await;
         if let Some(connection) = connections.get_mut(&connection_id) {

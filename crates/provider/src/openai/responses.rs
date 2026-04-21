@@ -330,14 +330,14 @@ impl ModelProviderSDK for OpenAIResponsesProvider {
             "sending openai responses completion request"
         );
 
-        let response = self
-            .request_builder(&body)
-            .send()
-            .await
-            .map_err(|err| ProviderError::Other {
-                message: format!("failed to send openai responses request: {err}"),
-                source: Some(err.into()),
-            })?;
+        let response =
+            self.request_builder(&body)
+                .send()
+                .await
+                .map_err(|err| ProviderError::Other {
+                    message: format!("failed to send openai responses request: {err}"),
+                    source: Some(err.into()),
+                })?;
 
         let status = response.status();
         if !status.is_success() {
@@ -356,7 +356,8 @@ impl ModelProviderSDK for OpenAIResponsesProvider {
     async fn completion_stream(
         &self,
         request: ModelRequest,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> + Send>>, ProviderError> {
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> + Send>>, ProviderError>
+    {
         let body = build_request(&request, true);
         debug!(
             provider = "openai-responses",
@@ -368,10 +369,11 @@ impl ModelProviderSDK for OpenAIResponsesProvider {
             "sending openai responses streaming request"
         );
 
-        let event_source = EventSource::new(self.request_builder(&body))
-            .map_err(|err| ProviderError::StreamError {
+        let event_source = EventSource::new(self.request_builder(&body)).map_err(|err| {
+            ProviderError::StreamError {
                 message: format!("failed to create openai responses event source: {err}"),
-            })?;
+            }
+        })?;
         let stream = async_stream::try_stream! {
             let mut text_buf = String::new();
             let mut reasoning_buf = String::new();

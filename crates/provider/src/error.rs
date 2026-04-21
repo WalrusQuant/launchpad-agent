@@ -60,10 +60,7 @@ pub enum ProviderError {
 
 impl ProviderError {
     pub fn is_retryable(&self) -> bool {
-        matches!(
-            self,
-            Self::RateLimited { .. } | Self::ServerError { .. }
-        )
+        matches!(self, Self::RateLimited { .. } | Self::ServerError { .. })
     }
 
     pub fn is_context_too_long(&self) -> bool {

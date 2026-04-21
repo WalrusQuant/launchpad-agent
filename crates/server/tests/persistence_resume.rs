@@ -33,7 +33,10 @@ impl ModelProviderSDK for SingleReplyProvider {
     async fn completion_stream(
         &self,
         _request: ModelRequest,
-    ) -> Result<std::pin::Pin<Box<dyn futures::Stream<Item = Result<StreamEvent, ProviderError>> + Send>>, ProviderError> {
+    ) -> Result<
+        std::pin::Pin<Box<dyn futures::Stream<Item = Result<StreamEvent, ProviderError>> + Send>>,
+        ProviderError,
+    > {
         Ok(Box::pin(stream::iter(vec![
             Ok(StreamEvent::TextDelta {
                 index: 0,

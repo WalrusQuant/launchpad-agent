@@ -35,7 +35,9 @@ impl Tool for SkillTool {
         ctx: &ToolContext,
         input: serde_json::Value,
     ) -> anyhow::Result<ToolOutput> {
-        let name = input["name"].as_str().ok_or_else(|| anyhow::anyhow!("missing 'name' field"))?;
+        let name = input["name"]
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("missing 'name' field"))?;
         let found = find_skill(&ctx.cwd, name)
             .ok_or_else(|| anyhow::anyhow!("Skill \"{name}\" not found"))?;
         let content = fs::read_to_string(&found)?;

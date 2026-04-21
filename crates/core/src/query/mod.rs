@@ -19,8 +19,8 @@ use lpa_provider::{ModelProviderSDK, ProviderError};
 use lpa_tools::{ToolCall, ToolContext, ToolOrchestrator, ToolRegistry};
 
 use crate::{
-    AgentError, CompactionOutcome, ContentBlock, EligibilitySelector, Message, Role,
-    SessionState, SummaryModelSelection, TurnConfig, run_llm_compaction, warn_compaction_failed,
+    AgentError, CompactionOutcome, ContentBlock, EligibilitySelector, Message, Role, SessionState,
+    SummaryModelSelection, TurnConfig, run_llm_compaction, warn_compaction_failed,
 };
 
 use compaction::{compact_session, micro_compact};

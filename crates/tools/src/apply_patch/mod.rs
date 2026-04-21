@@ -46,7 +46,9 @@ impl Tool for ApplyPatchTool {
         ctx: &ToolContext,
         input: serde_json::Value,
     ) -> anyhow::Result<ToolOutput> {
-        let patch_text = input["patchText"].as_str().ok_or_else(|| anyhow::anyhow!("missing 'patchText' field"))?;
+        let patch_text = input["patchText"]
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("missing 'patchText' field"))?;
         debug!(
             tool = self.name(),
             cwd = %ctx.cwd.display(),
@@ -110,8 +112,10 @@ impl Tool for ApplyPatchTool {
 
             let additions = new_content.lines().count();
             let deletions = old_content.lines().count();
-            let relative_path =
-                apply::relative_worktree_path(target_path.as_ref().unwrap_or(&source_path), &ctx.cwd);
+            let relative_path = apply::relative_worktree_path(
+                target_path.as_ref().unwrap_or(&source_path),
+                &ctx.cwd,
+            );
             let kind_name = change.kind.as_str();
             let diff = format!("--- {}\n+++ {}\n", relative_path, relative_path);
 
@@ -128,9 +132,15 @@ impl Tool for ApplyPatchTool {
             total_diff.push('\n');
 
             summary.push(match change.kind {
-                PatchKind::Add => format!("A {}", apply::relative_worktree_path(&source_path, &ctx.cwd)),
+                PatchKind::Add => format!(
+                    "A {}",
+                    apply::relative_worktree_path(&source_path, &ctx.cwd)
+                ),
                 PatchKind::Delete => {
-                    format!("D {}", apply::relative_worktree_path(&source_path, &ctx.cwd))
+                    format!(
+                        "D {}",
+                        apply::relative_worktree_path(&source_path, &ctx.cwd)
+                    )
                 }
                 PatchKind::Update | PatchKind::Move => {
                     format!(
