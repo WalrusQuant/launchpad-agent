@@ -91,11 +91,20 @@ impl ServerRuntimeDependencies {
     }
 
     /// Creates an initial core session state for a newly created server session.
-    pub(crate) fn new_session_state(&self, session_id: SessionId, cwd: PathBuf) -> SessionState {
-        let config = SessionConfig {
+    /// Builds the initial core session state. A `Some(session_config)` override
+    /// (e.g. per-session `permission_mode`/`sandbox_mode` from session/start)
+    /// wins; `None` falls back to the server default, applying the configured
+    /// `[sandbox]` policy.
+    pub(crate) fn new_session_state(
+        &self,
+        session_id: SessionId,
+        cwd: PathBuf,
+        session_config: Option<SessionConfig>,
+    ) -> SessionState {
+        let config = session_config.unwrap_or_else(|| SessionConfig {
             sandbox_policy: self.sandbox_policy.clone(),
             ..SessionConfig::default()
-        };
+        });
         let mut state = SessionState::new(config, cwd);
         state.id = session_id.to_string();
         state
