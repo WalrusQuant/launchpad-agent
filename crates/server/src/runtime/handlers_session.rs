@@ -129,6 +129,11 @@ impl ServerRuntime {
         let sandbox_policy = params.sandbox_mode.as_deref().and_then(parse_sandbox_mode);
         let session_config = if permission_mode.is_some() || sandbox_policy.is_some() {
             let mut cfg = SessionConfig::default();
+            // Seed the sandbox baseline from the server's configured [sandbox]
+            // policy so a request that only overrides `permission_mode` does not
+            // silently drop the configured sandbox. An explicit per-session
+            // `sandbox_mode` still overrides it below.
+            cfg.sandbox_policy = self.deps.sandbox_policy.clone();
             if let Some(mode) = permission_mode {
                 cfg.permission_mode = mode;
             }

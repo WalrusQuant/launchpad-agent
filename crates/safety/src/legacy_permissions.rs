@@ -223,11 +223,20 @@ fn canonicalize_or_walk_ancestors(
 
     // Resolve relative paths against cwd before walking — otherwise an input
     // like "foo/bar.txt" would have no canonicalizable ancestor at all.
-    let absolute: PathBuf = if target.is_absolute() {
+    let joined: PathBuf = if target.is_absolute() {
         target.to_path_buf()
     } else {
         cwd_canon.join(target)
     };
+
+    // Lexically collapse `.` / `..` BEFORE resolving. A non-existent tail like
+    // `realdir/../../escape.txt` would otherwise survive: `file_name()` returns
+    // `None` for `..` components (dropping them from the walk) and
+    // `Path::starts_with` does not normalize `..`, so the workspace-boundary
+    // check could be bypassed. The existing-ancestor portion is still
+    // symlink-resolved via `canonicalize` below; the non-existent tail can't
+    // contain symlinks, so lexical normalization of it is sound.
+    let absolute = lexically_normalize(&joined);
 
     if let Ok(canon) = std::fs::canonicalize(&absolute) {
         return canon;
@@ -255,13 +264,32 @@ fn canonicalize_or_walk_ancestors(
             }
             None => {
                 // Reached root with nothing canonicalizable — return the
-                // resolved-but-not-canonical absolute path so the caller's
+                // lexically-normalized absolute path so the caller's
                 // starts_with check still works against cwd_canon when the
                 // target lives under it on a non-symlinked path.
                 return absolute;
             }
         }
     }
+}
+
+/// Lexically collapses `.` and `..` components without touching the filesystem.
+/// `..` pops the previous component (and is a no-op at the root), `.` is
+/// dropped, everything else is kept. Used to neutralize `..` traversal in a
+/// not-yet-existing write target before the workspace-boundary check.
+fn lexically_normalize(path: &std::path::Path) -> PathBuf {
+    use std::path::Component;
+    let mut out = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::ParentDir => {
+                out.pop();
+            }
+            Component::CurDir => {}
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
 }
 
 #[async_trait]
@@ -536,5 +564,39 @@ mod tests {
         };
         let decision = policy.check(&bash_request).await;
         assert!(matches!(decision, PermissionDecision::Deny { .. }));
+    }
+
+    #[tokio::test]
+    async fn sandbox_workspace_write_denies_dotdot_escape() {
+        use super::SandboxContext;
+        use crate::{SandboxMode, SandboxPolicyRecord};
+        // A non-existent tail that traverses out of the workspace with `..`.
+        // `sub` does not exist, so canonicalize fails and the ancestor walk
+        // runs; without lexical normalization the `..` components were dropped
+        // and the path wrongly resolved back inside cwd (sandbox escape).
+        let tmp = tempfile::tempdir().expect("create tempdir");
+        let cwd = tmp.path().to_path_buf();
+        let policy = RuleBasedPolicy::with_sandbox(
+            PermissionMode::AutoApprove,
+            SandboxContext {
+                policy: SandboxPolicyRecord {
+                    mode: SandboxMode::Restricted,
+                    workspace_write: true,
+                },
+                cwd: cwd.clone(),
+            },
+        );
+        let escaping = cwd.join("sub").join("..").join("..").join("escape.txt");
+        let request = PermissionRequest {
+            tool_name: "write".into(),
+            resource: ResourceKind::FileWrite,
+            description: "escape the workspace via ..".into(),
+            target: Some(escaping.to_string_lossy().into_owned()),
+        };
+        let decision = policy.check(&request).await;
+        assert!(
+            matches!(decision, PermissionDecision::Deny { .. }),
+            "expected Deny for `..` escape outside workspace, got {decision:?}",
+        );
     }
 }
