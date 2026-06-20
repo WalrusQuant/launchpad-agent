@@ -5,6 +5,19 @@ use tracing::warn;
 use super::capabilities::{OpenAIReasoningMode, OpenAIRequestProfile};
 use super::{OpenAIReasoningEffort, OpenAIRole};
 
+/// Some OpenAI-compatible providers omit `tool_calls[].id` even though the
+/// spec requires it. A blank id collides across parallel tool calls, so tool
+/// results route to the wrong call or get dropped. Synthesize a unique id when
+/// the upstream value is empty.
+pub(crate) fn ensure_tool_call_id(raw: &str, tool_name: &str) -> String {
+    let trimmed = raw.trim();
+    if !trimmed.is_empty() {
+        return trimmed.to_string();
+    }
+    let suffix = uuid::Uuid::new_v4();
+    format!("synth-{tool_name}-{suffix}")
+}
+
 pub(crate) fn request_role(role: &str) -> OpenAIRole {
     match role.parse::<RequestRole>() {
         Ok(RequestRole::System) => OpenAIRole::System,

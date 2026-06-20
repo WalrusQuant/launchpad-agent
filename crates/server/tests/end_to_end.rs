@@ -202,6 +202,7 @@ async fn websocket_listener_supports_handshake_subscription_and_turn_lifecycle()
             Box::new(FileSystemSkillCatalog::new(SkillsConfig::default())),
             mcp_manager,
             Vec::new(),
+            None,
         ),
     );
     let listen = vec![format!("ws://{bind_address}")];

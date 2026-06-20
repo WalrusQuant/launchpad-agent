@@ -394,6 +394,7 @@ fn build_runtime(data_root: &std::path::Path) -> Result<Arc<ServerRuntime>> {
             Box::new(FileSystemSkillCatalog::new(SkillsConfig::default())),
             mcp_manager,
             Vec::new(),
+            None,
         ),
     ))
 }

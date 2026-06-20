@@ -107,7 +107,9 @@ mod tests {
         let presets = load_builtin_model_presets().expect("load builtin model presets");
         assert!(!presets.is_empty());
         assert_eq!(presets[0].slug, "qwen3-coder-next");
-        assert!(!presets[0].base_instructions.is_empty());
+        // Raw presets no longer embed a prompt; they inherit the shared default
+        // during conversion to `Model`.
+        assert!(presets[0].base_instructions.is_empty());
     }
 
     #[test]
@@ -116,6 +118,16 @@ mod tests {
         assert!(!models.is_empty());
         assert_eq!(models[0].slug, "qwen3-coder-next");
         assert!(!models[0].base_instructions.is_empty());
+    }
+
+    #[test]
+    fn empty_preset_base_instructions_inherit_default() {
+        let models = load_builtin_models().expect("load builtin models");
+        // Every catalogued model resolves to the shared default prompt because
+        // none of them carry their own `base_instructions` anymore.
+        for model in &models {
+            assert_eq!(model.base_instructions, default_base_instructions());
+        }
     }
 
     #[test]

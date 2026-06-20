@@ -111,11 +111,13 @@ fn project_history_merges_tool_call_and_result() {
             kind: SessionHistoryItemKind::ToolCall,
             title: "Ran powershell -Command \"Get-Date\"".to_string(),
             body: String::new(),
+            payload: None,
         },
         SessionHistoryItem {
             kind: SessionHistoryItemKind::ToolResult,
             title: "Tool output".to_string(),
             body: "2026-04-09".to_string(),
+            payload: None,
         },
     ];
 

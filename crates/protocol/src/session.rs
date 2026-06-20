@@ -37,6 +37,16 @@ pub struct SessionStartParams {
     pub ephemeral: bool,
     pub title: Option<String>,
     pub model: Option<String>,
+    /// Permission mode for the session. Accepted values:
+    /// `"auto-approve"`, `"interactive"`, `"deny"`. Absent → server default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub permission_mode: Option<String>,
+    /// Sandbox mode for the session. Accepted values:
+    /// `"unrestricted"`, `"workspace-write"`, `"read-only"`. Absent → server default.
+    /// Maps to `SandboxPolicyRecord { mode, workspace_write }` server-side so
+    /// `protocol` stays free of safety-crate types.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sandbox_mode: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -53,7 +63,7 @@ pub struct SessionResumeParams {
     pub session_id: SessionId,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SessionResumeResult {
     pub session: SessionSummary,
     pub latest_turn: Option<TurnSummary>,
@@ -71,11 +81,18 @@ pub enum SessionHistoryItemKind {
     Error,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SessionHistoryItem {
     pub kind: SessionHistoryItemKind,
     pub title: String,
     pub body: String,
+    /// Optional structured payload preserving the original tool-call / tool-
+    /// result inputs so resumed sessions can render rich cards (diffs,
+    /// command previews, etc.) instead of falling back to title+body strings.
+    /// Absent for legacy rollouts and for items where rich rendering doesn't
+    /// add anything (plain user / assistant text).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub payload: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]

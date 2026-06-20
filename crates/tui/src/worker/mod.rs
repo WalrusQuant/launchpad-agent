@@ -606,7 +606,7 @@ async fn run_worker_inner(
                         match client
                             .approval_respond(ApprovalRespondParams {
                                 session_id: approval_session_id,
-                                turn_id: approval_turn_id,
+                                turn_id: Some(approval_turn_id),
                                 approval_id: approval_id.clone(),
                                 decision,
                                 scope,
@@ -679,6 +679,8 @@ async fn ensure_session_started(
             ephemeral: false,
             title: None,
             model: Some(model.to_string()),
+            permission_mode: None,
+            sandbox_mode: None,
         })
         .await?;
     *session_id = Some(session.session_id);
