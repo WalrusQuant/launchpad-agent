@@ -55,7 +55,10 @@ pub struct ModelPreset {
     /// How the selected thinking mode should be applied to requests.
     #[serde(default)]
     pub thinking_implementation: Option<ThinkingImplementation>,
-    /// Base system instructions bundled with the model.
+    /// Base system instructions bundled with the model. When empty, the model
+    /// inherits the shared `default_base_instructions()` at conversion time, so
+    /// the prompt lives in one place instead of being duplicated per entry.
+    #[serde(default)]
     pub base_instructions: String,
     /// Maximum context window in tokens.
     #[serde(default = "default_context_window")]
@@ -124,7 +127,11 @@ impl From<ModelPreset> for Model {
             thinking_capability: value.thinking_capability,
             default_reasoning_effort: value.default_reasoning_effort,
             thinking_implementation: value.thinking_implementation,
-            base_instructions: value.base_instructions,
+            base_instructions: if value.base_instructions.trim().is_empty() {
+                crate::default_base_instructions().to_string()
+            } else {
+                value.base_instructions
+            },
             context_window: value.context_window,
             effective_context_window_percent: value.effective_context_window_percent,
             truncation_policy: value.truncation_policy,

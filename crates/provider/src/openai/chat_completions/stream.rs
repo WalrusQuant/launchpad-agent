@@ -349,6 +349,12 @@ impl ChatCompletionStreamState {
 
         if !entry.started && tool_call_delta_starts_block(entry) {
             entry.started = true;
+            // GLM / Z.ai sometimes stream a blank tool-call id; synthesize a
+            // stable one so the result routes back to this call. Persist it on
+            // the entry so later deltas and the tool result reference the same id.
+            if entry.id.trim().is_empty() {
+                entry.id = crate::openai::shared::ensure_tool_call_id(&entry.id, &entry.name);
+            }
             events.push(StreamEvent::ToolCallStart {
                 index: content_index,
                 id: entry.id.clone(),
