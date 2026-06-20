@@ -10,7 +10,7 @@ use lpa_utils::FileSystemConfigPathResolver;
 use crate::SkillsConfig;
 use crate::config::{
     AppConfigError, ContextManageConfig, LogRotation, LoggingConfig, LoggingFileConfig,
-    SafetyPolicyModelSelection, ServerConfig,
+    SafetyPolicyModelSelection, SandboxConfig, ServerConfig,
 };
 
 /// Stores the fully normalized runtime configuration.
@@ -22,6 +22,9 @@ pub struct AppConfig {
     pub summary_model: SummaryModelSelection,
     /// Safety and policy-model defaults.
     pub safety_policy_model: SafetyPolicyModelSelection,
+    /// Sandbox enforcement defaults applied to new sessions.
+    #[serde(default)]
+    pub sandbox: SandboxConfig,
     /// Policy that Context-window management and compaction defaults.
     pub context: ContextManageConfig,
     /// Transport and server runtime defaults.
@@ -78,6 +81,7 @@ impl Default for AppConfig {
             },
             summary_model: SummaryModelSelection::UseTurnModel,
             safety_policy_model: SafetyPolicyModelSelection::UseAxiliaryModel,
+            sandbox: SandboxConfig::default(),
             server: ServerConfig {
                 listen: Vec::new(),
                 max_connections: 32,

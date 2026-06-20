@@ -133,6 +133,7 @@ fn build_runtime_with_registry(
             })),
             mcp_manager,
             Vec::new(),
+            None,
         ),
     )
 }

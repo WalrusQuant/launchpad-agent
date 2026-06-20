@@ -12,7 +12,7 @@ use lpa_core::{
 };
 use lpa_mcp::McpManager;
 use lpa_provider::ModelProviderSDK;
-use lpa_safety::ApprovalCache;
+use lpa_safety::{ApprovalCache, SandboxPolicyRecord};
 use lpa_tools::ToolRegistry;
 
 use crate::{
@@ -41,6 +41,9 @@ pub struct ServerRuntimeDependencies {
     /// `trust_level = "trusted"`. Pre-seeded into every new session's approval
     /// cache so trusted-server tools skip the approval flow.
     pub(crate) trusted_mcp_tool_names: Arc<Vec<String>>,
+    /// Sandbox policy applied to every new session, sourced from the `[sandbox]`
+    /// config section. `None` leaves sessions unrestricted.
+    pub(crate) sandbox_policy: Option<SandboxPolicyRecord>,
 }
 
 impl ServerRuntimeDependencies {
@@ -58,6 +61,7 @@ impl ServerRuntimeDependencies {
         skill_catalog: Box<dyn SkillCatalog + Send>,
         mcp_manager: Arc<dyn McpManager>,
         trusted_mcp_tool_names: Vec<String>,
+        sandbox_policy: Option<SandboxPolicyRecord>,
     ) -> Self {
         Self {
             provider,
@@ -68,6 +72,7 @@ impl ServerRuntimeDependencies {
             skill_catalog: StdMutex::new(skill_catalog),
             mcp_manager,
             trusted_mcp_tool_names: Arc::new(trusted_mcp_tool_names),
+            sandbox_policy,
         }
     }
 
@@ -87,7 +92,11 @@ impl ServerRuntimeDependencies {
 
     /// Creates an initial core session state for a newly created server session.
     pub(crate) fn new_session_state(&self, session_id: SessionId, cwd: PathBuf) -> SessionState {
-        let mut state = SessionState::new(SessionConfig::default(), cwd);
+        let config = SessionConfig {
+            sandbox_policy: self.sandbox_policy.clone(),
+            ..SessionConfig::default()
+        };
+        let mut state = SessionState::new(config, cwd);
         state.id = session_id.to_string();
         state
     }

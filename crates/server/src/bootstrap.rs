@@ -136,6 +136,7 @@ pub async fn run_server_process(args: ServerProcessArgs) -> Result<()> {
             skill_catalog,
             Arc::clone(&mcp_manager),
             trusted_mcp_tool_names,
+            config.sandbox.to_policy_record(),
         ),
     );
     tracing::info!("starting persisted session restore");

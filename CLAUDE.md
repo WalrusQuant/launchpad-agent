@@ -74,7 +74,7 @@ Rust 1.85+. All 421 tests currently pass — keep it that way.
 **Stubbed or partial — do not assume these exist:**
 - **TaskTool** — returns acknowledgment, not registered by default. Re-add to `register_builtin_tools` + `register_builtin_runtime_tools` when real subagent dispatch lands.
 - **LspTool** — stub, not registered by default.
-- **OS sandboxing** — `SandboxMode::Restricted/External` defined, nothing enforces them
+- **OS-level sandboxing** — no process isolation yet. BUT a rule-based workspace sandbox IS now enforced: set `[sandbox] enabled = true` (optional `workspace_write`) in config.toml and the query loop attaches a `RuleBasedPolicy::with_sandbox` that denies file writes outside cwd and (when `workspace_write = false`) all writes + shell. Sandbox denials override AutoApprove/Ask. See `crates/safety/src/legacy_permissions.rs` (`SandboxContext`, `evaluate_sandbox`) and `crates/core/src/config/safety.rs` (`SandboxConfig`). `SandboxMode::External` still unimplemented.
 - **Skill hot-reload** — `watch_for_changes` config exists, no fs-events impl
 - **Tool progress events** — types exist, not streamed end-to-end
 - **MCP HTTP / Streamable-HTTP transport** — gated behind the `streamable-http` feature flag; types present, not implemented
