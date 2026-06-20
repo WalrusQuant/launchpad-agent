@@ -177,7 +177,21 @@ async fn run_prompt(
     let provider =
         lpa_server::load_server_provider(&home_dir.join("config.toml"), Some(&resolved.model))?;
 
-    let mut session_state = SessionState::new(SessionConfig::default(), cwd.clone());
+    // Resolve the merged app config (user + project) so the single-shot path
+    // honors the same [sandbox] section as the interactive server path.
+    let app_config = FileSystemAppConfigLoader::new(home_dir.clone())
+        .load(Some(cwd.as_path()))
+        .unwrap_or_default();
+    let sandbox_policy = app_config.sandbox.to_policy_record();
+    if sandbox_policy.is_some() {
+        eprintln!("lpagent [prompt] sandbox enabled (workspace-scoped)");
+    }
+
+    let session_config = SessionConfig {
+        sandbox_policy,
+        ..SessionConfig::default()
+    };
+    let mut session_state = SessionState::new(session_config, cwd.clone());
     session_state.push_message(lpa_core::Message::user(input.to_string()));
 
     let registry = {
