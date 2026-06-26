@@ -72,15 +72,19 @@ impl TuiApp {
             .and_then(lpa_core::preset_by_id)
     }
 
-    fn existing_api_key_for_preset(&self, preset_base_url: Option<&str>) -> Option<String> {
-        let preset_base_url = preset_base_url?;
+    /// Finds a saved API key belonging to the same provider as `preset`.
+    ///
+    /// Identity is the preset's exact base URL paired with its wire API — not a
+    /// prefix — so providers whose base URLs share a prefix can never lend each
+    /// other a key. Returns `None` for presets without a default base URL (the
+    /// custom/BYO endpoint), since there is nothing to match against.
+    fn existing_api_key_for_preset(&self, preset: &lpa_core::ProviderPreset) -> Option<String> {
+        let preset_base_url = preset.default_base_url?;
         self.saved_models
             .iter()
             .find(|entry| {
-                entry
-                    .base_url
-                    .as_deref()
-                    .is_some_and(|url| url.starts_with(preset_base_url))
+                entry.wire_api == preset.wire_api
+                    && entry.base_url.as_deref() == Some(preset_base_url)
             })
             .and_then(|entry| entry.api_key.clone())
     }
@@ -208,8 +212,7 @@ impl TuiApp {
         if self.onboarding_selected_api_key.is_none()
             && let Some(preset) = preset
         {
-            self.onboarding_selected_api_key =
-                self.existing_api_key_for_preset(preset.default_base_url);
+            self.onboarding_selected_api_key = self.existing_api_key_for_preset(preset);
         }
 
         let needs_key = preset.map(|p| !p.api_key_env_vars.is_empty()).unwrap_or(true);

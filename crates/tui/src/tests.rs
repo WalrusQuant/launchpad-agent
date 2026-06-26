@@ -568,6 +568,30 @@ async fn configure_reuses_saved_api_key_for_provider() {
 }
 
 #[tokio::test]
+async fn configure_does_not_reuse_key_from_a_different_provider() {
+    let mut app = test_app();
+    // A saved key whose base URL is a *prefix* of another provider's URL must
+    // not be lent out — identity is the exact base URL + wire API.
+    app.saved_models = vec![SavedModelEntry {
+        model: "some-model".to_string(),
+        provider: ProviderFamily::openai(),
+        wire_api: lpa_core::ProviderWireApi::OpenAIChatCompletions,
+        base_url: Some("https://api.x.ai".to_string()),
+        api_key: Some("sk-other".to_string()),
+    }];
+    app.handle_slash_command("/configure".to_string()).unwrap();
+    // xAI's real base URL is https://api.x.ai/v1 — the saved https://api.x.ai
+    // is a prefix but not an exact match, so it must be ignored.
+    app.handle_preset_selected("xai");
+    select_model_row(&mut app, "grok-4");
+    app.try_accept_aux_panel_selection();
+
+    // No matching saved key → the flow asks for one instead of reusing.
+    assert!(app.onboarding_api_key_pending);
+    assert_eq!(app.onboarding_selected_api_key, None);
+}
+
+#[tokio::test]
 async fn configure_anthropic_preset_shows_model_catalog() {
     let mut app = test_app();
     app.handle_slash_command("/configure".to_string()).unwrap();
