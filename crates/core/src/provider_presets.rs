@@ -111,9 +111,9 @@ pub fn all_presets() -> &'static [ProviderPreset] {
             wire_api: ProviderWireApi::OpenAIChatCompletions,
             default_base_url: Some("https://api.z.ai/api/coding/paas/v4"),
             api_key_env_vars: &["Z_AI_API_KEY", "LPA_API_KEY"],
-            description: "Z.ai coding plan — GLM family (glm-5.1 flagship)",
+            description: "Z.ai coding plan — GLM family (glm-5.2 flagship)",
             is_custom: false,
-            default_model: Some("glm-5.1"),
+            default_model: Some("glm-5.2"),
         },
         ProviderPreset {
             id: "ollama",
@@ -189,7 +189,7 @@ mod tests {
             preset.default_base_url,
             Some("https://api.z.ai/api/coding/paas/v4")
         );
-        assert_eq!(preset.default_model, Some("glm-5.1"));
+        assert_eq!(preset.default_model, Some("glm-5.2"));
         assert!(preset.api_key_env_vars.contains(&"Z_AI_API_KEY"));
         assert!(!preset.is_custom);
     }
