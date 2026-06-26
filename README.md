@@ -28,8 +28,17 @@ Running inside Launchpad with the file explorer and git panel open:
 
 ```bash
 git clone https://github.com/launchpad/launchpad-agent && cd launchpad-agent
-cargo build --release
+cargo install --path crates/cli
 
+lpagent
+```
+
+This installs the `lpagent` binary to `~/.cargo/bin`, so you can run `lpagent` from any directory. (Make sure `~/.cargo/bin` is on your `PATH` — rustup adds it by default.)
+
+Prefer not to install? Build and run it in place instead:
+
+```bash
+cargo build --release
 ./target/release/lpagent
 ```
 
