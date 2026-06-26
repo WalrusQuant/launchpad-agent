@@ -459,11 +459,36 @@ impl ServerRuntime {
             )
         };
         drop(event_tx);
-        let latest_usage = event_task.await.ok().flatten();
+        let latest_usage = match event_task.await {
+            Ok(usage) => usage,
+            Err(join_error) => {
+                tracing::error!(
+                    session_id = %session_id,
+                    error = %join_error,
+                    "event-forwarding task terminated abnormally; client events may be incomplete"
+                );
+                None
+            }
+        };
         self.active_tasks.lock().await.remove(&session_id);
 
         let final_turn = {
             let mut session = session_arc.lock().await;
+            // If the active turn was already cleared, a concurrent turn/interrupt
+            // finalized, persisted, and broadcast this turn. Bail out rather than
+            // double-writing the journal or re-broadcasting it as Completed.
+            let still_active = session
+                .active_turn
+                .as_ref()
+                .is_some_and(|active| active.turn_id == turn.turn_id);
+            if !still_active {
+                tracing::debug!(
+                    session_id = %session_id,
+                    turn_id = %turn.turn_id,
+                    "turn completion raced with an interrupt; interrupt already finalized it"
+                );
+                return;
+            }
             let mut final_turn = turn.clone();
             final_turn.completed_at = Some(Utc::now());
             final_turn.status = if result.is_ok() {
