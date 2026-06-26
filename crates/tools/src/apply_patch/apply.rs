@@ -1,3 +1,4 @@
+use std::ffi::OsStr;
 use std::path::{Component, Path, PathBuf};
 
 use tokio::fs;
@@ -13,12 +14,22 @@ pub(super) fn resolve_relative(base: &Path, rel: &str) -> anyhow::Result<PathBuf
         ));
     }
 
-    let mut out = base.to_path_buf();
+    // Resolve `.`/`..` lexically against an accumulating stack so the result can
+    // never climb above `base`. A `..` that would pop past the root is rejected
+    // outright — this stops a patch from writing outside the workspace even when
+    // no sandbox policy is attached.
+    let mut stack: Vec<&OsStr> = Vec::new();
     for component in candidate.components() {
         match component {
             Component::CurDir => {}
-            Component::Normal(part) => out.push(part),
-            Component::ParentDir => out.push(".."),
+            Component::Normal(part) => stack.push(part),
+            Component::ParentDir => {
+                if stack.pop().is_none() {
+                    return Err(anyhow::anyhow!(
+                        "file reference `{rel}` escapes the workspace root"
+                    ));
+                }
+            }
             Component::Prefix(_) | Component::RootDir => {
                 return Err(anyhow::anyhow!(
                     "file references can only be relative, NEVER ABSOLUTE."
@@ -26,6 +37,9 @@ pub(super) fn resolve_relative(base: &Path, rel: &str) -> anyhow::Result<PathBuf
             }
         }
     }
+
+    let mut out = base.to_path_buf();
+    out.extend(stack);
     Ok(out)
 }
 

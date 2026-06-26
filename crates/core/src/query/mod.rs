@@ -16,7 +16,9 @@ use tokio::time::sleep;
 use tracing::{debug, info, info_span, warn};
 
 use lpa_provider::{ModelProviderSDK, ProviderError};
-use lpa_tools::{ToolCall, ToolContext, ToolOrchestrator, ToolRegistry};
+use lpa_tools::{
+    ToolCall, ToolCallResult, ToolContext, ToolOrchestrator, ToolOutput, ToolRegistry,
+};
 
 use crate::{
     AgentError, CompactionOutcome, ContentBlock, EligibilitySelector, Message, Role, SessionState,
@@ -98,6 +100,14 @@ pub type EventCallback = Arc<dyn Fn(QueryEvent) + Send + Sync>;
 const MAX_RETRIES: usize = 5;
 const INITIAL_RETRY_BACKOFF_MS: u64 = 250;
 
+/// Runaway guard: the maximum number of consecutive model calls the agent may
+/// make without fresh user input before the loop bails out. A model that loops
+/// tool calls forever, or that keeps hitting `max_tokens` and getting a
+/// continuation prompt, would otherwise never terminate. The counter resets
+/// whenever a new user prompt is drained, so genuinely long interactive
+/// sessions are unaffected — only autonomous runaway is bounded.
+const MAX_AUTONOMOUS_STEPS: usize = 1000;
+
 /// The recursive agent loop — the beating heart of the runtime.
 ///
 /// The implementation refers to Claude Code's `query.ts`. It drives
@@ -131,10 +141,25 @@ pub async fn query(
 
     let mut retry_count: usize = 0;
     let mut context_compacted = false;
+    let mut autonomous_steps: usize = 0;
 
     loop {
-        for prompt in session.drain_pending_user_prompts() {
+        let pending_prompts = session.drain_pending_user_prompts();
+        if !pending_prompts.is_empty() {
+            // Fresh user input — reset the runaway guard.
+            autonomous_steps = 0;
+        }
+        for prompt in pending_prompts {
             session.push_message(Message::user(prompt));
+        }
+
+        autonomous_steps += 1;
+        if autonomous_steps > MAX_AUTONOMOUS_STEPS {
+            warn!(
+                steps = autonomous_steps,
+                "autonomous step limit reached — aborting turn to prevent a runaway loop"
+            );
+            return Err(AgentError::MaxTurnsExceeded(MAX_AUTONOMOUS_STEPS));
         }
 
         if session.last_input_tokens > 0
@@ -156,11 +181,19 @@ pub async fn query(
             {
                 Ok(Some(outcome)) => emit(QueryEvent::ContextCompacted(outcome)),
                 Ok(None) => {
-                    compact_session(session);
+                    let dropped = compact_session(session);
+                    warn!(
+                        dropped_messages = dropped,
+                        "LLM compaction produced no summary — fell back to naive message drop"
+                    );
                 }
                 Err(error) => {
                     warn_compaction_failed(&error);
-                    compact_session(session);
+                    let dropped = compact_session(session);
+                    warn!(
+                        dropped_messages = dropped,
+                        "LLM compaction failed — fell back to naive message drop"
+                    );
                 }
             }
         }
@@ -411,34 +444,62 @@ pub async fn query(
             });
         }
 
-        let tool_calls: Vec<ToolCall> = tool_uses
-            .into_iter()
-            .map(|(id, name, initial_input, json_str, saw_delta)| {
-                let input = if saw_delta {
-                    serde_json::from_str(&json_str).unwrap_or(initial_input)
-                } else {
-                    initial_input
-                };
-                emit(QueryEvent::ToolUseStart {
-                    id: id.clone(),
-                    name: name.clone(),
-                    input: input.clone(),
-                });
-                assistant_content.push(ContentBlock::ToolUse {
-                    id: id.clone(),
-                    name: name.clone(),
-                    input: input.clone(),
-                });
-                ToolCall { id, name, input }
-            })
-            .collect();
+        // Split the model's tool calls into those with well-formed arguments
+        // (which run normally) and those whose argument JSON failed to parse.
+        // The latter are NOT executed with a silent empty `{}` default — instead
+        // we feed the model an error tool result so it can re-issue the call
+        // with valid arguments.
+        let mut tool_calls: Vec<ToolCall> = Vec::new();
+        let mut invalid_arg_results: Vec<ToolCallResult> = Vec::new();
+        for (id, name, initial_input, json_str, saw_delta) in tool_uses {
+            let parsed = if saw_delta {
+                match serde_json::from_str::<serde_json::Value>(&json_str) {
+                    Ok(value) => Ok(value),
+                    Err(error) => Err(error.to_string()),
+                }
+            } else {
+                Ok(initial_input)
+            };
+
+            let input = match &parsed {
+                Ok(value) => value.clone(),
+                Err(_) => serde_json::Value::Null,
+            };
+            emit(QueryEvent::ToolUseStart {
+                id: id.clone(),
+                name: name.clone(),
+                input: input.clone(),
+            });
+            assistant_content.push(ContentBlock::ToolUse {
+                id: id.clone(),
+                name: name.clone(),
+                input,
+            });
+
+            match parsed {
+                Ok(value) => tool_calls.push(ToolCall {
+                    id,
+                    name,
+                    input: value,
+                }),
+                Err(error) => {
+                    warn!(tool = %name, %error, "tool call arguments were not valid JSON");
+                    invalid_arg_results.push(ToolCallResult {
+                        tool_use_id: id,
+                        output: ToolOutput::error(format!(
+                            "invalid tool arguments: {error}. Arguments must be a valid JSON object; please re-issue the call."
+                        )),
+                    });
+                }
+            }
+        }
 
         session.push_message(Message {
             role: Role::Assistant,
             content: assistant_content,
         });
 
-        if tool_calls.is_empty() {
+        if tool_calls.is_empty() && invalid_arg_results.is_empty() {
             if stop_reason == Some(StopReason::MaxTokens) {
                 debug!("max_tokens reached — injecting continuation prompt");
                 session.push_message(Message::user("Please continue from where you left off."));
@@ -469,7 +530,10 @@ pub async fn query(
             session_id: session.id.clone(),
         };
 
-        let results = orchestrator.execute_batch(&tool_calls, &tool_ctx).await;
+        let mut results = orchestrator.execute_batch(&tool_calls, &tool_ctx).await;
+        // Tool results are matched to calls by `tool_use_id`, so appending the
+        // invalid-argument errors here keeps every tool_use paired with a result.
+        results.extend(invalid_arg_results);
 
         let result_content: Vec<ContentBlock> = results
             .into_iter()

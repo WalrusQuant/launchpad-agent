@@ -218,6 +218,125 @@ async fn query_uses_session_permission_mode_for_mutating_tools() {
     );
 }
 
+/// Streams a tool call whose argument JSON is malformed, then ends the turn.
+struct MalformedArgsProvider {
+    requests: AtomicUsize,
+}
+
+#[async_trait]
+impl lpa_provider::ModelProviderSDK for MalformedArgsProvider {
+    async fn completion(&self, _request: ModelRequest) -> Result<ModelResponse, ProviderError> {
+        unreachable!("tests stream responses only")
+    }
+
+    async fn completion_stream(
+        &self,
+        _request: ModelRequest,
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, ProviderError>> + Send>>, ProviderError>
+    {
+        let request_number = self.requests.fetch_add(1, Ordering::SeqCst);
+        let events = if request_number == 0 {
+            vec![
+                Ok(StreamEvent::ToolCallStart {
+                    index: 0,
+                    id: "tool-1".into(),
+                    name: "mutating_tool".into(),
+                    input: json!({}),
+                }),
+                // Truncated / invalid JSON argument payload.
+                Ok(StreamEvent::ToolCallInputDelta {
+                    index: 0,
+                    partial_json: r#"{"value":"#.into(),
+                }),
+                Ok(StreamEvent::MessageDone {
+                    response: ModelResponse {
+                        id: "resp-1".into(),
+                        content: vec![ResponseContent::ToolUse {
+                            id: "tool-1".into(),
+                            name: "mutating_tool".into(),
+                            input: json!({}),
+                        }],
+                        stop_reason: Some(StopReason::ToolUse),
+                        usage: Usage::default(),
+                        metadata: Default::default(),
+                    },
+                }),
+            ]
+        } else {
+            vec![Ok(StreamEvent::MessageDone {
+                response: ModelResponse {
+                    id: "resp-2".into(),
+                    content: vec![ResponseContent::Text("done".into())],
+                    stop_reason: Some(StopReason::EndTurn),
+                    usage: Usage::default(),
+                    metadata: Default::default(),
+                },
+            })]
+        };
+        Ok(Box::pin(futures::stream::iter(events)))
+    }
+
+    fn name(&self) -> &str {
+        "malformed-args-provider"
+    }
+}
+
+#[tokio::test]
+async fn query_surfaces_invalid_tool_arguments_as_error() {
+    let mut registry = ToolRegistry::new();
+    registry.register(Arc::new(MutatingTool));
+    let registry = Arc::new(registry);
+    let orchestrator = ToolOrchestrator::new(Arc::clone(&registry));
+
+    // AutoApprove so a *successful* execution would NOT be an error — proving the
+    // error result comes from argument validation, not permission denial.
+    let mut session = SessionState::new(
+        SessionConfig {
+            permission_mode: PermissionMode::AutoApprove,
+            ..Default::default()
+        },
+        std::env::temp_dir(),
+    );
+    session.push_message(Message::user("run the tool"));
+
+    query(
+        &mut session,
+        &TurnConfig {
+            model: Model::default(),
+            thinking_selection: None,
+        },
+        Arc::new(MalformedArgsProvider {
+            requests: AtomicUsize::new(0),
+        }),
+        registry,
+        &orchestrator,
+        None,
+    )
+    .await
+    .expect("query should complete and append an error tool_result");
+
+    let tool_result = session
+        .messages
+        .iter()
+        .flat_map(|message| message.content.iter())
+        .find_map(|block| match block {
+            ContentBlock::ToolResult {
+                tool_use_id,
+                content,
+                is_error,
+            } if tool_use_id == "tool-1" => Some((content.clone(), *is_error)),
+            _ => None,
+        })
+        .expect("a tool_result for tool-1 should be appended");
+
+    assert!(tool_result.1, "invalid arguments should be a tool error");
+    assert!(
+        tool_result.0.contains("invalid tool arguments"),
+        "expected an invalid-arguments message, got: {}",
+        tool_result.0
+    );
+}
+
 #[tokio::test]
 async fn query_resolves_model_variant_thinking_before_building_request() {
     let requests = Arc::new(Mutex::new(Vec::new()));
