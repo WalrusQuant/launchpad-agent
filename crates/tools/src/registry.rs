@@ -62,6 +62,20 @@ impl Default for ToolRegistry {
     }
 }
 
+/// Applies `--allowed-tools` / `--disallowed-tools` filters to a registry. When
+/// `allowed` is non-empty only those tools survive; `disallowed` is then removed
+/// from whatever remains. Shared by the headless CLI path and the server
+/// bootstrap (which honors the `LPA_ALLOWED_TOOLS` / `LPA_DISALLOWED_TOOLS` env
+/// vars set by a headless run) so both apply identical semantics.
+pub fn apply_tool_filters(registry: &mut ToolRegistry, allowed: &[String], disallowed: &[String]) {
+    if !allowed.is_empty() {
+        registry.retain(|name| allowed.iter().any(|candidate| candidate == name));
+    }
+    if !disallowed.is_empty() {
+        registry.retain(|name| !disallowed.iter().any(|denied| denied == name));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -155,5 +169,41 @@ mod tests {
     fn default_creates_empty_registry() {
         let reg = ToolRegistry::default();
         assert!(reg.all().is_empty());
+    }
+
+    fn registry_with(names: &[&str]) -> ToolRegistry {
+        let mut reg = ToolRegistry::new();
+        for name in names {
+            reg.register(Arc::new(DummyTool {
+                tool_name: Box::leak(name.to_string().into_boxed_str()),
+                read_only: true,
+            }));
+        }
+        reg
+    }
+
+    #[test]
+    fn apply_tool_filters_allow_keeps_only_listed() {
+        let mut reg = registry_with(&["read", "ls", "bash"]);
+        apply_tool_filters(&mut reg, &["read".to_string(), "ls".to_string()], &[]);
+        assert!(reg.get("read").is_some());
+        assert!(reg.get("ls").is_some());
+        assert!(reg.get("bash").is_none());
+        assert_eq!(reg.all().len(), 2);
+    }
+
+    #[test]
+    fn apply_tool_filters_deny_removes_listed() {
+        let mut reg = registry_with(&["read", "ls", "bash"]);
+        apply_tool_filters(&mut reg, &[], &["bash".to_string()]);
+        assert!(reg.get("bash").is_none());
+        assert_eq!(reg.all().len(), 2);
+    }
+
+    #[test]
+    fn apply_tool_filters_empty_is_noop() {
+        let mut reg = registry_with(&["read", "ls"]);
+        apply_tool_filters(&mut reg, &[], &[]);
+        assert_eq!(reg.all().len(), 2);
     }
 }

@@ -14,6 +14,7 @@ lpa-core = { workspace = true }
 lpa-tools = { workspace = true }
 lpa-provider = { workspace = true }
 lpa-protocol = { workspace = true }
+lpa-client = { workspace = true }
 lpa-safety = { workspace = true }
 lpa-tasks = { workspace = true }
 lpa-utils = { workspace = true }

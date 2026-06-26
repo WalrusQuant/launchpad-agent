@@ -1243,6 +1243,7 @@ dependencies = [
  "clap",
  "colored",
  "futures",
+ "lpa-client",
  "lpa-core",
  "lpa-protocol",
  "lpa-provider",

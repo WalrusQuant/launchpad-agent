@@ -1,3 +1,73 @@
+# CLI Resume Flags — `--continue` / `--resume` / `--session-id`
+
+**Status: Phase 1 SHIPPED (2026-06-26). Phase 2 (resume flags) is next.** Parity roadmap §1 + §16.
+
+Phase 1 routed all headless runs through the server (persisted) and — to avoid
+regressing the existing headless flags — folded in the de-risked Phase 3
+server-side env honoring. Verified end-to-end: full server round-trip
+(spawn → initialize → session/start → turn/start → event-drain → completion),
+rollout persisted (SessionMeta + Turn + Item lines), exit codes 0/1 correct,
+final assistant text captured from item events. 467 tests pass (was 463; +3
+tool-filter, +3 system-prompt, +2 csv-parse, −4 relocated from cli, +overlap).
+
+## Goal
+
+Bring headless (`-p`) up to Claude Code parity for session continuity:
+
+```
+lpagent -p "start a refactor plan"        # -> session abc123, persisted
+lpagent -p --resume abc123 "apply step 1" # -> continues abc123, persisted
+lpagent -p -c "and step 2"                # -> resumes most-recent session in cwd
+lpagent -p --session-id <uuid> "..."      # -> run under a caller-chosen id (resume-or-create)
+```
+
+## Locked decisions
+
+- **Architecture: headless drives the existing `StdioServerClient`** — the same path the TUI uses (`session_resume` / `session_list` / `session_start` / `turn_start` + notification draining). The server already does rollout load/replay/persist. Do **not** re-implement rollout replay in the CLI (the duplication the roadmap warns against).
+- **Every headless run persists** (user decision 2026-06-26). Plain `-p` routes through the server too, so headless runs are themselves resumable/chainable. Accepts that headless now spawns the server subprocess (the TUI already does this on every launch).
+- **Final assistant text comes from item events, not `turn/completed`.** `turn/completed` carries only status + usage. Mirror the worker's `latest_completed_agent_message` pattern: capture the agent message from item notifications, print it on completion.
+- `--continue` = most-recently-`updated_at` session whose `cwd` == current dir.
+- `--session-id` = resume if it exists, else start a new session with that id. Conflicts with `--resume`/`--continue` (clap `conflicts_with`).
+
+## Phases
+
+### Phase 1 — headless server-client driver
+- [x] Extract headless into `crates/cli/src/headless.rs` (main.rs is ~670 lines; don't grow it). Move `HeadlessOptions`, `run_headless`, `apply_system_prompt_overrides`, `apply_tool_filters` + their tests.
+- [x] Spawn the server via `StdioServerClient::spawn`, reusing `server_env_overrides` (lift it out of `agent.rs` to a shared spot, or duplicate the small builder). `initialize()` first.
+- [x] Drive a turn: resolve `SessionId` (per flag, Phase 2) → `turn_start { session_id, prompt }` → drain notifications until `turn/completed` (exit 0) or `turn/failed` (exit 1). Capture final agent text from item events; preserve current contract: final assistant text → stdout, diagnostics → stderr.
+- [x] Map turn status → documented exit codes (0/1).
+
+### Phase 2 — flag resolution
+- [ ] Add clap flags (global): `-r/--resume <SESSION_ID>`, `-c/--continue`, `--session-id <UUID>`; `conflicts_with` between the three.
+- [ ] `--resume <id>`: parse id → `session_resume`; clean error (exit 1) on unknown id.
+- [ ] `--continue`: `session_list` → filter `cwd == current_dir` → max `updated_at`; error (exit 1) if none.
+- [ ] `--session-id <uuid>`: add `session_id: Option<SessionId>` to `SessionStartParams` (protocol) + handler honors it (resume-or-create-with-id). Validate uuid.
+- [ ] No-flag path: `session_start` (persisted).
+
+### Phase 3 — flag parity through the server path (DE-RISKED 2026-06-26 — no protocol changes)
+
+**Finding:** because every headless run spawns its own private, single-tenant server subprocess, all flags cross the process boundary as **server env vars honored at bootstrap** — the same channel `server_env_overrides` (agent.rs) already uses for provider/model. **No `turn_start`/`session_start`/wire-protocol changes needed.** Two clean single-point insertion sites confirmed.
+
+- [x] `--model` → existing `session_start.model` (or `LPA_MODEL`). No new work.
+- [x] `--dangerously-skip-permissions` → existing `session_start` params: `permission_mode = "auto-approve"` + `sandbox_mode = "unrestricted"`. No new work.
+- [x] `--allowed-tools` / `--disallowed-tools` → new env (`LPA_ALLOWED_TOOLS` / `LPA_DISALLOWED_TOOLS`), applied in `bootstrap.rs` right after `register_builtin_tools` + MCP registration via `registry.retain(...)`. **Move `apply_tool_filters` from `cli/main.rs` into `lpa-tools`** (or a shared spot) so CLI and server share one impl instead of duplicating.
+- [x] `--system-prompt` / `--append-system-prompt` → new env (`LPA_SYSTEM_PROMPT` / `LPA_APPEND_SYSTEM_PROMPT`), stored on `ServerRuntimeDependencies` at bootstrap, applied to `model.base_instructions` in `execution.rs::resolve_turn_model` (single function, covers all 3 model-resolution branches). Reuse `apply_system_prompt_overrides`.
+
+**Correctness caveat (documented, not a blocker):** env-based system-prompt/tool-filter overrides are *process-global*. That is exactly right for a single-tenant headless server, but would be wrong for a shared multi-session server. If these ever become per-session features (needed for subagents §6), they graduate to real protocol params then. Not needed now.
+
+### Phase 4 — tests + docs
+- [ ] Unit: flag parsing, conflict rejection, `--continue` selection (most-recent-in-cwd), uuid validation.
+- [ ] Integration: `-p` start → persist → `-p --resume` round-trip shows continued context.
+- [ ] Docs: README headless section, `docs/parity-roadmap.md` (§1 `--continue`/`--resume`/`--session-id` ✅, §16 ✅), CLAUDE.md headless bullet, exit-code docs. Bump test count.
+
+## Open questions / risks
+- ~~Phase 3 flag plumbing~~ — **RESOLVED**: env-var-at-bootstrap, no protocol changes (see Phase 3).
+- `server_env_overrides` currently lives in `agent.rs`; sharing it cleanly may want a small `cli` helper module. Headless adds the 4 new env vars (`LPA_SYSTEM_PROMPT`, `LPA_APPEND_SYSTEM_PROMPT`, `LPA_ALLOWED_TOOLS`, `LPA_DISALLOWED_TOOLS`) to this builder.
+- Confirm `session/start` handler path is reachable with a pre-chosen id without breaking the rollout filename scheme (`rollout-<ts>-<id>.jsonl`). This is the one remaining `--session-id` unknown (Phase 2).
+- Final-text capture: `turn/completed` carries only status+usage, so the driver must accumulate agent text from `ItemDelta`/agent-message item events and flush on completion (mirror `latest_completed_agent_message`).
+
+---
+
 # Onboarding UX Overhaul
 
 Currently `lpagent onboard` shows a model picker (builtin models only) and then asks "base url" / "api key" as free-text prompts. There's no concept of a provider preset, no connection validation, no "OpenRouter" / "Groq" / "Ollama" out-of-box, no masked API key, no way to see current config before changing it.

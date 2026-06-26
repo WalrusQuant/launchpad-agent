@@ -2,14 +2,18 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 use lpa_core::{
     AppConfig, AppConfigLoader, FileSystemAppConfigLoader, LoggingBootstrap, LoggingRuntime,
-    ModelCatalog, PresetModelCatalog, load_config, resolve_provider_settings,
+    resolve_provider_settings,
 };
 use lpa_server::{ServerProcessArgs, run_server_process};
 use lpa_utils::find_lpa_home;
 
 mod agent;
+mod event_text;
+mod headless;
+mod server_env;
 
 use agent::run_agent;
+use headless::{HeadlessOptions, run_headless};
 
 /// Process exit codes. Documented here so scripts can branch on `lpagent`'s
 /// result. `clap` already exits with `USAGE` (2) on argument-parse failures.
@@ -252,165 +256,6 @@ impl LogLevel {
     }
 }
 
-/// Resolved options for a single non-interactive (headless) run.
-///
-/// Logging is intentionally not part of this struct: `install_logging` in
-/// `main` already installs the global subscriber (honoring `--verbose` /
-/// `--debug` via [`Cli::effective_log_level`]) before this runs.
-struct HeadlessOptions {
-    prompt: String,
-    model: Option<String>,
-    system_prompt: Option<String>,
-    append_system_prompt: Option<String>,
-    allowed_tools: Vec<String>,
-    disallowed_tools: Vec<String>,
-    skip_permissions: bool,
-}
-
-async fn run_headless(options: HeadlessOptions) -> Result<()> {
-    use lpa_core::{SessionConfig, SessionState, default_base_instructions};
-    use lpa_tools::{ToolOrchestrator, ToolRegistry};
-
-    let cwd = std::env::current_dir()?;
-    let _stored_config = load_config().unwrap_or_default();
-    let mut resolved = resolve_provider_settings()
-        .map_err(|e| anyhow::anyhow!("failed to resolve provider: {e}"))?;
-
-    if let Some(model) = &options.model {
-        resolved.model = model.clone();
-    }
-
-    let home_dir = find_lpa_home()?;
-    let provider =
-        lpa_server::load_server_provider(&home_dir.join("config.toml"), Some(&resolved.model))?;
-
-    // Resolve the merged app config (user + project) so the single-shot path
-    // honors the same [sandbox] section as the interactive server path. When
-    // the caller passes `--dangerously-skip-permissions` we drop the sandbox so
-    // the run is fully unrestricted.
-    let app_config = FileSystemAppConfigLoader::new(home_dir.clone())
-        .load(Some(cwd.as_path()))
-        .unwrap_or_default();
-    let sandbox_policy = if options.skip_permissions {
-        None
-    } else {
-        app_config.sandbox.to_policy_record()
-    };
-    if sandbox_policy.is_some() {
-        eprintln!("lpagent [prompt] sandbox enabled (workspace-scoped)");
-    }
-    if options.skip_permissions {
-        eprintln!("lpagent [prompt] permission checks and sandbox bypassed");
-    }
-
-    let session_config = SessionConfig {
-        sandbox_policy,
-        ..SessionConfig::default()
-    };
-    let mut session_state = SessionState::new(session_config, cwd.clone());
-    session_state.push_message(lpa_core::Message::user(options.prompt.clone()));
-
-    let registry = {
-        let mut reg = ToolRegistry::new();
-        lpa_tools::register_builtin_tools(&mut reg);
-        apply_tool_filters(&mut reg, &options.allowed_tools, &options.disallowed_tools);
-        std::sync::Arc::new(reg)
-    };
-    let orchestrator = ToolOrchestrator::new(std::sync::Arc::clone(&registry));
-    let model_catalog = PresetModelCatalog::load()?;
-
-    let mut model = model_catalog
-        .get(&resolved.model)
-        .cloned()
-        .unwrap_or_else(|| lpa_core::Model {
-            slug: resolved.model.clone(),
-            base_instructions: default_base_instructions().to_string(),
-            ..Default::default()
-        });
-    apply_system_prompt_overrides(
-        &mut model.base_instructions,
-        options.system_prompt.as_deref(),
-        options.append_system_prompt.as_deref(),
-    );
-
-    let turn_config = lpa_core::TurnConfig {
-        model,
-        thinking_selection: None,
-    };
-
-    eprintln!("lpagent [prompt] model={} sending...", resolved.model);
-
-    let result = lpa_core::query(
-        &mut session_state,
-        &turn_config,
-        std::sync::Arc::clone(&provider.provider),
-        registry,
-        &orchestrator,
-        None,
-    )
-    .await;
-
-    match result {
-        Ok(()) => {
-            let reply = session_state.messages.iter().rev().find_map(|m| {
-                if m.role != lpa_core::Role::Assistant {
-                    return None;
-                }
-                m.content
-                    .iter()
-                    .filter_map(|block| match block {
-                        lpa_core::ContentBlock::Text { text } => Some(text.as_str()),
-                        _ => None,
-                    })
-                    .next()
-            });
-            match reply {
-                Some(text) => println!("{}", text),
-                None => eprintln!("lpagent [prompt] empty response"),
-            }
-        }
-        Err(e) => {
-            anyhow::bail!("prompt failed: {e}");
-        }
-    }
-
-    Ok(())
-}
-
-/// Apply `--system-prompt` (full replacement) then `--append-system-prompt`
-/// (suffix) to the model's base instructions, in that order.
-fn apply_system_prompt_overrides(
-    base_instructions: &mut String,
-    replacement: Option<&str>,
-    append: Option<&str>,
-) {
-    if let Some(system_prompt) = replacement {
-        *base_instructions = system_prompt.to_string();
-    }
-    if let Some(extra) = append {
-        if !base_instructions.is_empty() {
-            base_instructions.push_str("\n\n");
-        }
-        base_instructions.push_str(extra);
-    }
-}
-
-/// Apply `--allowed-tools` / `--disallowed-tools` to the registry. When an
-/// allow-list is present only those tools survive; the deny-list is then removed
-/// from whatever remains.
-fn apply_tool_filters(
-    registry: &mut lpa_tools::ToolRegistry,
-    allowed: &[String],
-    disallowed: &[String],
-) {
-    if !allowed.is_empty() {
-        registry.retain(|name| allowed.iter().any(|allowed| allowed == name));
-    }
-    if !disallowed.is_empty() {
-        registry.retain(|name| !disallowed.iter().any(|denied| denied == name));
-    }
-}
-
 async fn run_doctor() -> Result<()> {
     use colored::Colorize;
     use std::process::Command;
@@ -531,10 +376,8 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::{
-        Cli, Command, LogLevel, ServerProcessArgs, apply_system_prompt_overrides,
-        apply_tool_filters, cli_logging_overrides, logging_process_name,
+        Cli, Command, LogLevel, ServerProcessArgs, cli_logging_overrides, logging_process_name,
     };
-    use lpa_tools::{ToolRegistry, register_builtin_tools};
 
     /// A `Cli` with every field at its default; tests tweak the fields they care
     /// about so adding new flags does not churn every test.
@@ -634,40 +477,5 @@ mod tests {
             Some(LogLevel::Trace)
         );
         assert_eq!(base_cli().effective_log_level(), None);
-    }
-
-    #[test]
-    fn system_prompt_replacement_then_append() {
-        let mut base = "original".to_string();
-        apply_system_prompt_overrides(&mut base, Some("replaced"), Some("extra"));
-        assert_eq!(base, "replaced\n\nextra");
-    }
-
-    #[test]
-    fn system_prompt_append_only_keeps_base() {
-        let mut base = "original".to_string();
-        apply_system_prompt_overrides(&mut base, None, Some("extra"));
-        assert_eq!(base, "original\n\nextra");
-    }
-
-    #[test]
-    fn allowed_tools_keeps_only_listed() {
-        let mut registry = ToolRegistry::new();
-        register_builtin_tools(&mut registry);
-        apply_tool_filters(&mut registry, &["read".to_string(), "ls".to_string()], &[]);
-        assert!(registry.get("read").is_some());
-        assert!(registry.get("ls").is_some());
-        assert!(registry.get("bash").is_none());
-        assert_eq!(registry.all().len(), 2);
-    }
-
-    #[test]
-    fn disallowed_tools_removes_listed() {
-        let mut registry = ToolRegistry::new();
-        register_builtin_tools(&mut registry);
-        let before = registry.all().len();
-        apply_tool_filters(&mut registry, &[], &["bash".to_string()]);
-        assert!(registry.get("bash").is_none());
-        assert_eq!(registry.all().len(), before - 1);
     }
 }

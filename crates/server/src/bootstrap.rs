@@ -8,12 +8,13 @@ use lpa_core::{
     PresetModelCatalog, SkillsConfig,
 };
 use lpa_mcp::{McpManager, StdMcpManager, TrustLevel};
-use lpa_tools::{MCP_TOOL_PREFIX, ToolRegistry, register_mcp_tools};
+use lpa_tools::{MCP_TOOL_PREFIX, ToolRegistry, apply_tool_filters, register_mcp_tools};
 use lpa_utils::FileSystemConfigPathResolver;
 
 use crate::{
-    ListenTarget, ServerRuntime, execution::ServerRuntimeDependencies, load_server_provider,
-    resolve_listen_targets, run_listeners,
+    ListenTarget, ServerRuntime,
+    execution::{BaseInstructionsOverride, ServerRuntimeDependencies},
+    load_server_provider, resolve_listen_targets, run_listeners,
 };
 
 /// Command-line arguments accepted by the standalone server process entrypoint.
@@ -66,6 +67,16 @@ pub async fn run_server_process(args: ServerProcessArgs) -> Result<()> {
     }
     let statuses = mcp_manager.statuses().await.unwrap_or_default();
     register_mcp_tools(&mut registry, Arc::clone(&mcp_manager), &statuses);
+
+    // Honor headless `--allowed-tools` / `--disallowed-tools`, carried into this
+    // dedicated server subprocess as env vars. Applied after builtin + MCP
+    // registration so the filter sees the full tool set. Process-global is
+    // correct here: a headless server is single-tenant.
+    let allowed_tools = env_csv("LPA_ALLOWED_TOOLS");
+    let disallowed_tools = env_csv("LPA_DISALLOWED_TOOLS");
+    if !allowed_tools.is_empty() || !disallowed_tools.is_empty() {
+        apply_tool_filters(&mut registry, &allowed_tools, &disallowed_tools);
+    }
 
     // Collect tool names exposed by servers configured with `trust_level = "trusted"`.
     // These are pre-seeded into every new session's approval cache so trusted-server
@@ -137,7 +148,11 @@ pub async fn run_server_process(args: ServerProcessArgs) -> Result<()> {
             Arc::clone(&mcp_manager),
             trusted_mcp_tool_names,
             config.sandbox.to_policy_record(),
-        ),
+        )
+        .with_base_instructions_override(BaseInstructionsOverride {
+            replace: env_nonempty("LPA_SYSTEM_PROMPT"),
+            append: env_nonempty("LPA_APPEND_SYSTEM_PROMPT"),
+        }),
     );
     tracing::info!("starting persisted session restore");
     runtime.load_persisted_sessions().await?;
@@ -154,4 +169,45 @@ pub async fn run_server_process(args: ServerProcessArgs) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Reads a comma-separated env var into a list of trimmed, non-empty entries.
+/// Returns an empty vec when the var is unset or has no usable entries.
+fn env_csv(key: &str) -> Vec<String> {
+    split_csv(&std::env::var(key).unwrap_or_default())
+}
+
+/// Splits a comma-separated value into trimmed, non-empty entries. Pure helper
+/// behind [`env_csv`] so the parsing is unit-tested without touching process env.
+fn split_csv(value: &str) -> Vec<String> {
+    value
+        .split(',')
+        .map(str::trim)
+        .filter(|entry| !entry.is_empty())
+        .map(ToOwned::to_owned)
+        .collect()
+}
+
+/// Reads an env var, returning `None` when it is unset or empty.
+fn env_nonempty(key: &str) -> Option<String> {
+    std::env::var(key).ok().filter(|value| !value.is_empty())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::split_csv;
+    use pretty_assertions::assert_eq;
+
+    #[test]
+    fn split_csv_trims_and_drops_empties() {
+        assert_eq!(
+            split_csv(" read , ,bash,, ls "),
+            vec!["read".to_string(), "bash".to_string(), "ls".to_string()]
+        );
+    }
+
+    #[test]
+    fn split_csv_empty_input_is_empty() {
+        assert!(split_csv("").is_empty());
+    }
 }

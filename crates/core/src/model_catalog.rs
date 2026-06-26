@@ -84,6 +84,27 @@ pub fn default_base_instructions() -> &'static str {
     DEFAULT_BASE_INSTRUCTIONS
 }
 
+/// Applies a system-prompt override to a model's base instructions: `replacement`
+/// (when present) swaps the instructions wholesale, then `append` (when present)
+/// is added as a trailing block. Mirrors the `--system-prompt` /
+/// `--append-system-prompt` headless flags, shared so the CLI and the server's
+/// turn-model resolution apply identical semantics.
+pub fn apply_system_prompt_overrides(
+    base_instructions: &mut String,
+    replacement: Option<&str>,
+    append: Option<&str>,
+) {
+    if let Some(system_prompt) = replacement {
+        *base_instructions = system_prompt.to_string();
+    }
+    if let Some(extra) = append {
+        if !base_instructions.is_empty() {
+            base_instructions.push_str("\n\n");
+        }
+        base_instructions.push_str(extra);
+    }
+}
+
 /// Errors produced while loading the builtin catalog.
 #[derive(Debug, thiserror::Error)]
 pub enum PresetModelCatalogError {
@@ -97,8 +118,8 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::{
-        PresetModelCatalog, default_base_instructions, load_builtin_model_presets,
-        load_builtin_models,
+        PresetModelCatalog, apply_system_prompt_overrides, default_base_instructions,
+        load_builtin_model_presets, load_builtin_models,
     };
     use crate::ModelCatalog;
 
@@ -140,5 +161,26 @@ mod tests {
     #[test]
     fn default_base_instructions_are_available() {
         assert!(!default_base_instructions().trim().is_empty());
+    }
+
+    #[test]
+    fn system_prompt_replacement_then_append() {
+        let mut base = "original".to_string();
+        apply_system_prompt_overrides(&mut base, Some("replaced"), Some("extra"));
+        assert_eq!(base, "replaced\n\nextra");
+    }
+
+    #[test]
+    fn system_prompt_append_only_keeps_base() {
+        let mut base = "original".to_string();
+        apply_system_prompt_overrides(&mut base, None, Some("extra"));
+        assert_eq!(base, "original\n\nextra");
+    }
+
+    #[test]
+    fn system_prompt_no_overrides_is_noop() {
+        let mut base = "original".to_string();
+        apply_system_prompt_overrides(&mut base, None, None);
+        assert_eq!(base, "original");
     }
 }

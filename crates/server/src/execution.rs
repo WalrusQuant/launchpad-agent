@@ -8,7 +8,8 @@ use tokio::{sync::Mutex, task::JoinHandle};
 
 use lpa_core::{
     Model, ModelCatalog, ResolvedSkill, SessionConfig, SessionId, SessionRecord, SessionState,
-    SkillCatalog, SkillError, SkillId, TurnConfig, default_base_instructions,
+    SkillCatalog, SkillError, SkillId, TurnConfig, apply_system_prompt_overrides,
+    default_base_instructions,
 };
 use lpa_mcp::McpManager;
 use lpa_provider::ModelProviderSDK;
@@ -20,6 +21,27 @@ use crate::{
     session::{SessionHistoryItem, SessionSummary},
     turn::TurnSummary,
 };
+
+/// System-prompt override applied to every resolved turn model. Populated at
+/// server bootstrap from the `LPA_SYSTEM_PROMPT` / `LPA_APPEND_SYSTEM_PROMPT`
+/// env vars that a headless run sets on its dedicated server subprocess, so
+/// `--system-prompt` / `--append-system-prompt` survive the trip through the
+/// server without any wire-protocol change.
+#[derive(Debug, Clone, Default)]
+pub struct BaseInstructionsOverride {
+    /// Replaces the model's base instructions wholesale (`--system-prompt`).
+    pub replace: Option<String>,
+    /// Appended after the (possibly replaced) base instructions
+    /// (`--append-system-prompt`).
+    pub append: Option<String>,
+}
+
+impl BaseInstructionsOverride {
+    /// Whether this override leaves the model's base instructions untouched.
+    fn is_empty(&self) -> bool {
+        self.replace.is_none() && self.append.is_none()
+    }
+}
 
 /// Shared server-owned runtime dependencies used by live turn execution.
 pub struct ServerRuntimeDependencies {
@@ -44,6 +66,9 @@ pub struct ServerRuntimeDependencies {
     /// Sandbox policy applied to every new session, sourced from the `[sandbox]`
     /// config section. `None` leaves sessions unrestricted.
     pub(crate) sandbox_policy: Option<SandboxPolicyRecord>,
+    /// System-prompt override applied to every resolved turn model. Default
+    /// (empty) leaves catalog/base instructions untouched.
+    pub(crate) base_instructions_override: BaseInstructionsOverride,
 }
 
 impl ServerRuntimeDependencies {
@@ -73,7 +98,19 @@ impl ServerRuntimeDependencies {
             mcp_manager,
             trusted_mcp_tool_names: Arc::new(trusted_mcp_tool_names),
             sandbox_policy,
+            base_instructions_override: BaseInstructionsOverride::default(),
         }
+    }
+
+    /// Sets the system-prompt override applied to every resolved turn model.
+    /// Used by bootstrap to thread the headless `--system-prompt` /
+    /// `--append-system-prompt` env vars into turn-model resolution.
+    pub fn with_base_instructions_override(
+        mut self,
+        base_instructions_override: BaseInstructionsOverride,
+    ) -> Self {
+        self.base_instructions_override = base_instructions_override;
+        self
     }
 
     /// Returns a handle to the shared MCP manager.
@@ -119,7 +156,24 @@ impl ServerRuntimeDependencies {
     ///    `Model` so the wire API still fires with the right slug.
     /// 3. No request → fall back to the server's default model, first via the
     ///    catalog, then via a bare `Model` built from `default_model`.
+    ///
+    /// After resolution the configured [`BaseInstructionsOverride`] (from the
+    /// headless `--system-prompt` / `--append-system-prompt` env vars) is applied
+    /// to the model's base instructions.
     pub(crate) fn resolve_turn_model(&self, requested_model: Option<&str>) -> Model {
+        let mut model = self.resolve_base_turn_model(requested_model);
+        if !self.base_instructions_override.is_empty() {
+            apply_system_prompt_overrides(
+                &mut model.base_instructions,
+                self.base_instructions_override.replace.as_deref(),
+                self.base_instructions_override.append.as_deref(),
+            );
+        }
+        model
+    }
+
+    /// Resolves the catalog/BYO/default model before any system-prompt override.
+    fn resolve_base_turn_model(&self, requested_model: Option<&str>) -> Model {
         if let Some(requested) = requested_model {
             if let Some(model) = self.model_catalog.get(requested) {
                 return model.clone();
