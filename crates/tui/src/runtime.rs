@@ -74,7 +74,7 @@ impl TuiApp {
         }
 
         if app.show_model_onboarding {
-            app.show_onboarding_model_panel();
+            app.show_configure_preset_panel();
             app.onboarding_prompt = None;
             app.status_message.clear();
         }
@@ -624,26 +624,35 @@ impl TuiApp {
         }
     }
 
-    /// Returns the onboarding flow to input entry after a failure. Preset flows
-    /// re-prompt for a model slug (the API key already reached the server);
-    /// legacy custom flows re-prompt for the API key.
+    /// Returns the onboarding flow to input entry after a failure. The selected
+    /// model and base URL are kept; the most common failure cause is a bad or
+    /// expired key, so a key-bearing provider re-prompts for the API key, while
+    /// a keyless provider (e.g. local runtimes) re-prompts for the model slug.
     pub(crate) fn change_validation_inputs(&mut self) {
         if self.pending_validation_retry.take().is_none() {
             return;
         }
         self.input.clear();
-        if let Some(preset_id) = self.onboarding_preset_id.clone() {
-            let label = lpa_core::preset_by_id(&preset_id)
-                .map(|p| p.display_name.to_string())
-                .unwrap_or(preset_id);
+        let preset = self
+            .onboarding_preset_id
+            .as_deref()
+            .and_then(lpa_core::preset_by_id);
+        let label = preset
+            .map(|p| p.display_name.to_string())
+            .unwrap_or_else(|| "provider".to_string());
+        let needs_key = preset.map(|p| !p.api_key_env_vars.is_empty()).unwrap_or(true);
+
+        if needs_key {
+            self.onboarding_selected_api_key = None;
+            self.onboarding_api_key_pending = true;
+            self.onboarding_prompt = Some(format!("{label} API key"));
+            self.status_message = format!("Enter a different API key for {label}");
+        } else {
+            let hint = preset.map(|p| p.slug_hint).unwrap_or("model slug");
             self.onboarding_custom_model_pending = true;
             self.onboarding_selected_model = None;
-            self.onboarding_prompt = Some(format!("model slug for {label}"));
+            self.onboarding_prompt = Some(format!("model slug for {label} — {hint}"));
             self.status_message = format!("Enter a different model slug for {label}");
-        } else {
-            self.onboarding_api_key_pending = true;
-            self.onboarding_prompt = Some("api key".to_string());
-            self.status_message = "Enter a different API key".to_string();
         }
     }
 
@@ -660,15 +669,23 @@ impl TuiApp {
             self.onboarding_selected_model = Some(model.to_string());
             self.onboarding_selected_model_is_custom = true;
             self.input.clear();
+            self.onboarding_prompt_history
+                .push(format!("model> {model}"));
 
-            // Preset-driven flow: base_url + (maybe) key are already set — validate now.
-            if self.onboarding_preset_id.is_some() {
-                self.onboarding_prompt_history
-                    .push(format!("model> {model}"));
-                return self.begin_onboarding_validation();
+            let is_custom_preset = self
+                .onboarding_preset_id
+                .as_deref()
+                .and_then(lpa_core::preset_by_id)
+                .map(|p| p.is_custom)
+                .unwrap_or(false);
+
+            // A curated preset already knows its base URL — resolve/ask for the
+            // key (reusing a saved one) and validate.
+            if self.onboarding_preset_id.is_some() && !is_custom_preset {
+                return self.proceed_with_preset_model(model.to_string());
             }
 
-            // Legacy custom flow: model first, then base_url + api_key.
+            // Custom / BYO endpoint: model first, then base_url + api_key.
             self.onboarding_base_url_pending = true;
             self.aux_panel = None;
             self.aux_panel_selection = 0;
@@ -733,14 +750,22 @@ impl TuiApp {
                     .unwrap_or_default()
             ));
 
-            // Preset-driven flow: model slug still needs to be entered.
+            // A model was already chosen (curated pick, custom preset, or legacy
+            // flow) — validate now.
+            if self.onboarding_selected_model.is_some() {
+                return self.begin_onboarding_validation();
+            }
+
+            // Fallback: a preset still needs a model slug.
             if let Some(preset_id) = self.onboarding_preset_id.clone() {
-                let label = lpa_core::preset_by_id(&preset_id)
+                let preset = lpa_core::preset_by_id(&preset_id);
+                let label = preset
                     .map(|p| p.display_name.to_string())
                     .unwrap_or_else(|| preset_id.clone());
+                let hint = preset.map(|p| p.slug_hint).unwrap_or("model slug");
                 self.onboarding_custom_model_pending = true;
                 self.input.clear();
-                self.onboarding_prompt = Some(format!("model slug for {label}"));
+                self.onboarding_prompt = Some(format!("model slug for {label} — {hint}"));
                 self.status_message = format!("API key saved for {label}");
                 return Ok(());
             }

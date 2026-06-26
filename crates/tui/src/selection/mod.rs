@@ -84,6 +84,25 @@ impl TuiApp {
         });
     }
 
+    /// Shows the curated model list for the preset chosen in onboarding.
+    pub(crate) fn show_preset_model_panel(&mut self) {
+        let entries = self.preset_model_picker_entries();
+        self.aux_panel_selection = entries
+            .iter()
+            .position(|entry| entry.is_current)
+            .unwrap_or(0);
+        let title = self
+            .onboarding_preset_id
+            .as_deref()
+            .and_then(lpa_core::preset_by_id)
+            .map(|preset| format!("{} — pick a model", preset.display_name))
+            .unwrap_or_else(|| "Pick a model".to_string());
+        self.aux_panel = Some(AuxPanel {
+            title,
+            content: AuxPanelContent::ModelList(entries),
+        });
+    }
+
     pub(crate) fn reset_slash_selection(&mut self) {
         self.slash_selection = 0;
     }

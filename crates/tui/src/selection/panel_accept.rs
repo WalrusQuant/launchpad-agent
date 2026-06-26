@@ -35,6 +35,25 @@ impl TuiApp {
                     return false;
                 }
                 let selected = models[self.aux_panel_selection.min(models.len() - 1)].clone();
+
+                // Onboarding with a provider preset chosen: pick from the curated
+                // list or drop into manual-slug entry — credentials are resolved
+                // (and a saved key reused) by `proceed_with_preset_model`.
+                if self.show_model_onboarding && self.onboarding_preset_id.is_some() {
+                    if selected.is_custom_mode {
+                        self.begin_preset_custom_model();
+                    } else if let Err(error) = self.proceed_with_preset_model(selected.slug.clone())
+                    {
+                        self.push_item(
+                            TranscriptItemKind::Error,
+                            "Onboarding failed",
+                            error.to_string(),
+                        );
+                        self.status_message = "Failed to start validation".to_string();
+                    }
+                    return true;
+                }
+
                 if selected.is_custom_mode {
                     if self.show_model_onboarding {
                         self.begin_custom_model_onboarding();

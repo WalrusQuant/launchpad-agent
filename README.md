@@ -48,7 +48,7 @@ Then inside the TUI:
 /configure
 ```
 
-Pick a provider from the preset list, paste an API key (or accept the saved one), type a model slug, and go. Or just type a message and Launchpad will walk you through setup on first use.
+Pick a provider from the preset list, **choose a model from the curated picker** (or pick "Custom model…" to type your own slug — the prompt shows a format example), and go. If you've already configured that provider, your saved API key is reused automatically — no re-typing. Or just type a message and Launchpad will walk you through setup on first use.
 
 > [!TIP]
 > Rust 1.85+ required. Install via <https://rustup.rs/>.
@@ -66,16 +66,32 @@ Pick any of these from `/configure`:
 | Groq          | `https://api.groq.com/openai/v1`                        | `GROQ_API_KEY`                              |
 | Together AI   | `https://api.together.xyz/v1`                           | `TOGETHER_API_KEY`                          |
 | Mistral       | `https://api.mistral.ai/v1`                             | `MISTRAL_API_KEY`                           |
+| DeepSeek      | `https://api.deepseek.com`                              | `DEEPSEEK_API_KEY`                          |
+| xAI (Grok)    | `https://api.x.ai/v1`                                   | `XAI_API_KEY`                               |
+| Fireworks AI  | `https://api.fireworks.ai/inference/v1`                 | `FIREWORKS_API_KEY`                         |
+| Cerebras      | `https://api.cerebras.ai/v1`                            | `CEREBRAS_API_KEY`                          |
+| Perplexity    | `https://api.perplexity.ai`                             | `PERPLEXITY_API_KEY`                        |
+| Moonshot (Kimi)| `https://api.moonshot.ai/v1`                           | `MOONSHOT_API_KEY`                          |
+| DeepInfra     | `https://api.deepinfra.com/v1/openai`                   | `DEEPINFRA_API_KEY`                         |
+| Nebius        | `https://api.studio.nebius.ai/v1`                       | `NEBIUS_API_KEY`                            |
+| Hyperbolic    | `https://api.hyperbolic.xyz/v1`                         | `HYPERBOLIC_API_KEY`                        |
+| Novita AI     | `https://api.novita.ai/v3/openai`                       | `NOVITA_API_KEY`                            |
+| SambaNova     | `https://api.sambanova.ai/v1`                           | `SAMBANOVA_API_KEY`                         |
+| Lambda        | `https://api.lambda.ai/v1`                              | `LAMBDA_API_KEY`                            |
+| Nvidia NIM    | `https://integrate.api.nvidia.com/v1`                   | `NVIDIA_API_KEY`                            |
+| GitHub Models | `https://models.github.ai/inference`                    | `GITHUB_TOKEN`                              |
+| Z.ai (coding) | `https://api.z.ai/api/coding/paas/v4`                   | `Z_AI_API_KEY`                              |
 | Ollama (local)| `http://localhost:11434/v1`                             | —                                           |
+| LM Studio (local)| `http://localhost:1234/v1`                          | —                                           |
 | Custom        | you supply                                              | `LPA_API_KEY`                               |
 
-Anthropic / OpenAI / Google use their native wire formats. The rest share an OpenAI-compatible chat-completions surface.
+Anthropic / OpenAI / Google use their native wire formats. The rest share an OpenAI-compatible chat-completions surface. Every non-custom provider ships a curated, selectable model list in `/configure`; a "Custom model…" row is always available if you need a slug that isn't listed.
 
 ## Slash commands
 
 | Command       | Purpose                                                   |
 |---------------|-----------------------------------------------------------|
-| `/configure`  | Pick a provider, enter API key, add a model               |
+| `/configure`  | Pick a provider, choose a model from the list, add it      |
 | `/model`      | Switch between saved models                               |
 | `/config`     | Show the active `config.toml` (API keys masked)           |
 | `/reasoning`  | Toggle inline model reasoning display                     |
