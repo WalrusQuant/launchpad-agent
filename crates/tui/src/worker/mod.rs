@@ -23,9 +23,9 @@ use lpa_protocol::{
     ApprovalDecisionValue, ApprovalRespondParams, ApprovalScopeValue, ProviderFamily,
 };
 use lpa_server::{
-    InputItem, SessionListParams, SessionResumeParams, SessionStartParams,
-    SessionTitleUpdateParams, SkillListParams, StdioServerClient, StdioServerClientConfig,
-    TurnInterruptParams, TurnStartParams,
+    InputItem, SessionCompactParams, SessionContextClearParams, SessionListParams,
+    SessionResumeParams, SessionStartParams, SessionTitleUpdateParams, SkillListParams,
+    StdioServerClient, StdioServerClientConfig, TurnInterruptParams, TurnStartParams,
 };
 
 use crate::events::{SessionListEntry, WorkerEvent};
@@ -90,6 +90,10 @@ enum OperationCommand {
     SwitchSession(SessionId),
     /// Rename the current active session.
     RenameSession(String),
+    /// Manually compact the active session's context.
+    CompactSession,
+    /// Clear the active session's context while keeping the session alive.
+    ClearContext,
     /// Interrupt the active turn when one is running.
     InterruptTurn,
     /// Respond to a pending approval request.
@@ -216,6 +220,20 @@ impl QueryWorkerHandle {
     pub(crate) fn rename_session(&self, title: String) -> Result<()> {
         self.command_tx
             .send(OperationCommand::RenameSession(title))
+            .map_err(|_| anyhow::anyhow!("interactive worker is no longer running"))
+    }
+
+    /// Requests a manual context compaction of the active session.
+    pub(crate) fn compact_session(&self) -> Result<()> {
+        self.command_tx
+            .send(OperationCommand::CompactSession)
+            .map_err(|_| anyhow::anyhow!("interactive worker is no longer running"))
+    }
+
+    /// Requests that the active session's context be cleared.
+    pub(crate) fn clear_context(&self) -> Result<()> {
+        self.command_tx
+            .send(OperationCommand::ClearContext)
             .map_err(|_| anyhow::anyhow!("interactive worker is no longer running"))
     }
 
@@ -560,6 +578,75 @@ async fn run_worker_inner(
                                         .session
                                         .title
                                         .unwrap_or(title),
+                                });
+                            }
+                            Err(error) => {
+                                let _ = event_tx.send(WorkerEvent::TurnFailed {
+                                    message: error.to_string(),
+                                    turn_count,
+                                    total_input_tokens,
+                                    total_output_tokens,
+                                });
+                            }
+                        }
+                    }
+                    Some(OperationCommand::CompactSession) => {
+                        let Some(active_session_id) = session_id else {
+                            let _ = event_tx.send(WorkerEvent::TurnFailed {
+                                message: "no active session exists yet; send a prompt or switch to a saved session first".to_string(),
+                                turn_count,
+                                total_input_tokens,
+                                total_output_tokens,
+                            });
+                            continue;
+                        };
+                        match client
+                            .session_compact(SessionCompactParams {
+                                session_id: active_session_id,
+                            })
+                            .await
+                        {
+                            Ok(result) => {
+                                total_input_tokens = result.session.total_input_tokens;
+                                total_output_tokens = result.session.total_output_tokens;
+                                let _ = event_tx.send(WorkerEvent::ContextCompacted {
+                                    messages_removed: result.messages_removed,
+                                    summary_chars: result.summary_chars,
+                                });
+                            }
+                            Err(error) => {
+                                let _ = event_tx.send(WorkerEvent::TurnFailed {
+                                    message: error.to_string(),
+                                    turn_count,
+                                    total_input_tokens,
+                                    total_output_tokens,
+                                });
+                            }
+                        }
+                    }
+                    Some(OperationCommand::ClearContext) => {
+                        let Some(active_session_id) = session_id else {
+                            let _ = event_tx.send(WorkerEvent::TurnFailed {
+                                message: "no active session exists yet; send a prompt or switch to a saved session first".to_string(),
+                                turn_count,
+                                total_input_tokens,
+                                total_output_tokens,
+                            });
+                            continue;
+                        };
+                        match client
+                            .session_context_clear(SessionContextClearParams {
+                                session_id: active_session_id,
+                            })
+                            .await
+                        {
+                            Ok(result) => {
+                                active_turn_id = None;
+                                turn_count = 0;
+                                total_input_tokens = 0;
+                                total_output_tokens = 0;
+                                let _ = event_tx.send(WorkerEvent::ContextCleared {
+                                    messages_removed: result.messages_removed,
                                 });
                             }
                             Err(error) => {

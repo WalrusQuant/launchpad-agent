@@ -280,6 +280,19 @@ pub struct CompactionSnapshotLine {
     pub summary_item_id: ItemId,
 }
 
+/// Stores one context-clear marker in the rollout file. On replay every line
+/// before this marker is discarded, so a resumed session reflects the cleared
+/// state rather than the full pre-clear history.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ContextClearedLine {
+    /// The time when this rollout line was persisted.
+    pub timestamp: DateTime<Utc>,
+    /// The session whose context was cleared.
+    pub session_id: SessionId,
+    /// Number of messages dropped by the clear (informational).
+    pub messages_removed: usize,
+}
+
 /// Enumerates every canonical line type written to the rollout journal.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RolloutLine {
@@ -293,6 +306,8 @@ pub enum RolloutLine {
     SessionTitleUpdated(SessionTitleUpdatedLine),
     /// Compaction snapshot line.
     CompactionSnapshot(Box<CompactionSnapshotLine>),
+    /// Context-clear marker line.
+    ContextCleared(ContextClearedLine),
 }
 
 #[cfg(test)]

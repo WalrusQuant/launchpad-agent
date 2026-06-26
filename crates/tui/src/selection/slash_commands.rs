@@ -1,6 +1,12 @@
+use std::fmt::Write as _;
+
 use super::super::*;
 use super::rollout_files::{local_session_entries, read_redacted_config_toml};
 use lpa_core::SessionId;
+
+/// Where users are pointed for bug reports, feedback, and release notes.
+const ISSUES_URL: &str = "https://github.com/WalrusQuant/launchpad-agent/issues";
+const RELEASES_URL: &str = "https://github.com/WalrusQuant/launchpad-agent/releases";
 
 impl TuiApp {
     pub(crate) fn handle_slash_command(&mut self, prompt: String) -> Result<()> {
@@ -19,6 +25,69 @@ impl TuiApp {
                 self.last_ctrl_c_at = None;
                 self.status_message = "Exiting".to_string();
                 self.should_quit = true;
+                Ok(())
+            }
+            "/help" => {
+                self.emit_inline_command_echo(trimmed);
+                let mut body = String::new();
+                for spec in crate::slash::SLASH_COMMANDS {
+                    let _ = writeln!(body, "{:<16}{}", spec.name, spec.description);
+                }
+                self.show_aux_panel("Commands", body.trim_end().to_string());
+                self.status_message = "Slash commands shown".to_string();
+                Ok(())
+            }
+            "/export" => {
+                self.emit_inline_command_echo(trimmed);
+                let target = if argument.is_empty() {
+                    self.cwd.join("lpagent-transcript.md")
+                } else {
+                    let candidate = std::path::PathBuf::from(argument);
+                    if candidate.is_absolute() {
+                        candidate
+                    } else {
+                        self.cwd.join(candidate)
+                    }
+                };
+                let body =
+                    crate::transcript::export_transcript_markdown(&self.model, &self.transcript);
+                match std::fs::write(&target, body) {
+                    Ok(()) => {
+                        self.show_aux_panel(
+                            "Export",
+                            format!("Transcript written to {}", target.display()),
+                        );
+                        self.status_message = "Transcript exported".to_string();
+                    }
+                    Err(error) => {
+                        self.show_aux_panel(
+                            "Export",
+                            format!("Failed to write {}: {error}", target.display()),
+                        );
+                        self.status_message = "Export failed".to_string();
+                    }
+                }
+                Ok(())
+            }
+            "/bug" | "/feedback" => {
+                self.emit_inline_command_echo(trimmed);
+                self.show_aux_panel(
+                    "Feedback",
+                    format!("Report bugs and share feedback at:\n{ISSUES_URL}"),
+                );
+                self.status_message = "Feedback link shown".to_string();
+                Ok(())
+            }
+            "/release-notes" => {
+                self.emit_inline_command_echo(trimmed);
+                self.show_aux_panel(
+                    "Release notes",
+                    format!(
+                        "lpagent v{}\n\nRelease notes:\n{RELEASES_URL}",
+                        env!("CARGO_PKG_VERSION")
+                    ),
+                );
+                self.status_message = "Release notes shown".to_string();
                 Ok(())
             }
             "/status" => {
@@ -100,6 +169,24 @@ impl TuiApp {
                 self.aux_panel = None;
                 self.aux_panel_selection = 0;
                 self.status_message = "New session ready; send a prompt to start it".to_string();
+                Ok(())
+            }
+            "/compact" => {
+                self.emit_inline_command_echo(trimmed);
+                if self.busy {
+                    anyhow::bail!("cannot compact while a turn is running");
+                }
+                self.worker.compact_session()?;
+                self.status_message = "Compacting context...".to_string();
+                Ok(())
+            }
+            "/clear" => {
+                self.emit_inline_command_echo(trimmed);
+                if self.busy {
+                    anyhow::bail!("cannot clear context while a turn is running");
+                }
+                self.worker.clear_context()?;
+                self.status_message = "Clearing context...".to_string();
                 Ok(())
             }
             "/rename" => {

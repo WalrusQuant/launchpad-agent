@@ -1,6 +1,7 @@
 pub use lpa_protocol::{
-    SessionForkParams, SessionForkResult, SessionHistoryItem, SessionHistoryItemKind,
-    SessionListParams, SessionListResult, SessionResumeParams, SessionResumeResult,
-    SessionRuntimeStatus, SessionStartParams, SessionStartResult, SessionSummary,
-    SessionTitleUpdateParams, SessionTitleUpdateResult,
+    SessionCompactParams, SessionCompactResult, SessionContextClearParams,
+    SessionContextClearResult, SessionForkParams, SessionForkResult, SessionHistoryItem,
+    SessionHistoryItemKind, SessionListParams, SessionListResult, SessionResumeParams,
+    SessionResumeResult, SessionRuntimeStatus, SessionStartParams, SessionStartResult,
+    SessionSummary, SessionTitleUpdateParams, SessionTitleUpdateResult,
 };

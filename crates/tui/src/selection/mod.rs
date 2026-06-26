@@ -17,7 +17,7 @@ impl TuiApp {
         self.reset_slash_selection();
     }
 
-    fn emit_inline_command_echo(&mut self, command: &str) {
+    pub(crate) fn emit_inline_command_echo(&mut self, command: &str) {
         if self.inline_mode {
             self.pending_inline_history
                 .push(crate::transcript::format_shell_command_echo(command));

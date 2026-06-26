@@ -11,6 +11,36 @@ pub(crate) fn format_session_history(width: u16, items: &[TranscriptItem]) -> St
     items.iter().map(|item| format_item(width, item)).collect()
 }
 
+/// Render the transcript as a portable Markdown document for `/export`.
+///
+/// Unlike the on-screen formatter this emits clean `##` headings and untruncated
+/// bodies so the exported file is a faithful, shareable record of the session.
+pub(crate) fn export_transcript_markdown(model: &str, items: &[TranscriptItem]) -> String {
+    let mut out = String::new();
+    let _ = writeln!(out, "# lpagent transcript\n");
+    let _ = writeln!(out, "- model: {model}");
+    let _ = writeln!(out, "- items: {}\n", items.len());
+
+    for item in items {
+        let heading = match item.kind {
+            TranscriptItemKind::User => "User".to_string(),
+            TranscriptItemKind::Assistant => "Assistant".to_string(),
+            TranscriptItemKind::Reasoning => "Reasoning".to_string(),
+            TranscriptItemKind::ToolCall => format!("Tool call: {}", item.title.trim()),
+            TranscriptItemKind::ToolResult => "Tool output".to_string(),
+            TranscriptItemKind::Error => format!("Error: {}", item.title.trim()),
+            TranscriptItemKind::System => format!("System: {}", item.title.trim()),
+            TranscriptItemKind::ApprovalPrompt | TranscriptItemKind::ApprovalResolution => {
+                format!("Approval: {}", item.title.trim())
+            }
+        };
+        let _ = writeln!(out, "## {}\n", heading.trim_end_matches(": "));
+        let _ = writeln!(out, "{}\n", item.body.trim_end());
+    }
+
+    out
+}
+
 pub(crate) fn format_shell_command_echo(command: &str) -> String {
     format!("\n› {command}\n")
 }
@@ -440,6 +470,23 @@ mod tests {
 
         assert!(rendered.contains("--- user"));
         assert!(rendered.contains("> hello world"));
+    }
+
+    #[test]
+    fn exports_transcript_as_markdown() {
+        let items = vec![
+            TranscriptItem::new(TranscriptItemKind::User, "You", "hello"),
+            TranscriptItem::new(TranscriptItemKind::Assistant, "Assistant", "hi there"),
+        ];
+        let rendered = export_transcript_markdown("test-model", &items);
+
+        assert!(rendered.contains("# lpagent transcript"));
+        assert!(rendered.contains("- model: test-model"));
+        assert!(rendered.contains("- items: 2"));
+        assert!(rendered.contains("## User"));
+        assert!(rendered.contains("hello"));
+        assert!(rendered.contains("## Assistant"));
+        assert!(rendered.contains("hi there"));
     }
 
     #[test]

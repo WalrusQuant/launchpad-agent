@@ -10,10 +10,10 @@ use chrono::{Datelike, SecondsFormat, Utc};
 use tokio::sync::Mutex;
 
 use lpa_core::{
-    CompactionSnapshot, CompactionSnapshotLine, ContentBlock, ItemLine, ItemRecord, Message, Role,
-    RolloutLine, SessionId, SessionMetaLine, SessionRecord, SessionTitleFinalSource,
-    SessionTitleState, SessionTitleUpdatedLine, SnapshotStore, TextItem, ToolCallItem,
-    ToolResultItem, TurnId, TurnItem, TurnLine, TurnRecord, TurnStatus, Worklog,
+    CompactionSnapshot, CompactionSnapshotLine, ContentBlock, ContextClearedLine, ItemLine,
+    ItemRecord, Message, Role, RolloutLine, SessionId, SessionMetaLine, SessionRecord,
+    SessionTitleFinalSource, SessionTitleState, SessionTitleUpdatedLine, SnapshotStore, TextItem,
+    ToolCallItem, ToolResultItem, TurnId, TurnItem, TurnLine, TurnRecord, TurnStatus, Worklog,
 };
 
 use crate::{
@@ -167,6 +167,24 @@ impl RolloutStore {
                 title,
                 title_state,
                 previous_title,
+            }),
+        )
+    }
+
+    /// Appends one context-clear marker to the durable rollout journal so a
+    /// later resume reflects the cleared context instead of replaying the full
+    /// pre-clear history.
+    pub(crate) fn append_context_clear(
+        &self,
+        record: &SessionRecord,
+        messages_removed: usize,
+    ) -> Result<()> {
+        self.append_line(
+            &record.rollout_path,
+            &RolloutLine::ContextCleared(ContextClearedLine {
+                timestamp: Utc::now(),
+                session_id: record.id,
+                messages_removed,
             }),
         )
     }
@@ -325,6 +343,24 @@ impl ReplayState {
                 session.updated_at = line.timestamp;
             }
             RolloutLine::CompactionSnapshot(_) => {}
+            RolloutLine::ContextCleared(_) => {
+                // Discard everything accumulated before the marker so the
+                // rebuilt session matches the post-clear state. `next_item_seq`
+                // is intentionally left untouched: it must keep climbing past
+                // the seqs already written to this append-only file.
+                self.messages.clear();
+                self.history_items.clear();
+                self.pending_items.clear();
+                self.latest_turn = None;
+                self.latest_turn_summary = None;
+                self.turns_seen = 0;
+                self.loaded_item_count = 0;
+                self.total_input_tokens = 0;
+                self.total_output_tokens = 0;
+                self.total_cache_creation_tokens = 0;
+                self.total_cache_read_tokens = 0;
+                self.last_input_tokens = 0;
+            }
         }
         Ok(())
     }
@@ -592,9 +628,38 @@ mod tests {
 
     use super::ReplayState;
     use lpa_core::{
-        ItemId, ItemLine, ItemRecord, RolloutLine, SessionId, TextItem, ToolCallItem, TurnId,
-        TurnItem,
+        ContextClearedLine, ItemId, ItemLine, ItemRecord, RolloutLine, SessionId, TextItem,
+        ToolCallItem, TurnId, TurnItem,
     };
+
+    fn agent_message_item(
+        session_id: SessionId,
+        turn_id: TurnId,
+        seq: u64,
+        text: &str,
+    ) -> ItemLine {
+        let timestamp = Utc.with_ymd_and_hms(2026, 4, 6, 8, 0, seq as u32).unwrap();
+        ItemLine {
+            timestamp,
+            item: ItemRecord {
+                id: ItemId::new(),
+                session_id,
+                turn_id,
+                seq,
+                timestamp,
+                attempt_placement: None,
+                turn_status: None,
+                sibling_turn_ids: Vec::new(),
+                input_items: Vec::new(),
+                output_items: vec![TurnItem::AgentMessage(TextItem {
+                    text: text.to_string(),
+                })],
+                worklog: None,
+                error: None,
+                schema_version: 1,
+            },
+        }
+    }
 
     #[test]
     fn replay_orders_items_by_sequence_before_timestamp() {
@@ -671,5 +736,57 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(titles, vec!["assistant 1", "date"]);
+    }
+
+    #[test]
+    fn context_cleared_marker_discards_prior_items_and_counters() {
+        let session_id = SessionId::new();
+        let turn_id = TurnId::new();
+        let mut replay = ReplayState::default();
+
+        replay
+            .apply_line(RolloutLine::Item(agent_message_item(
+                session_id,
+                turn_id,
+                1,
+                "before clear",
+            )))
+            .expect("replay pre-clear item");
+        replay.loaded_item_count = 1;
+        replay.total_input_tokens = 500;
+        replay.turns_seen = 3;
+
+        replay
+            .apply_line(RolloutLine::ContextCleared(ContextClearedLine {
+                timestamp: Utc.with_ymd_and_hms(2026, 4, 6, 8, 1, 0).unwrap(),
+                session_id,
+                messages_removed: 1,
+            }))
+            .expect("replay context-clear marker");
+
+        // Everything before the marker is gone.
+        assert!(replay.pending_items.is_empty());
+        assert_eq!(replay.loaded_item_count, 0);
+        assert_eq!(replay.total_input_tokens, 0);
+        assert_eq!(replay.turns_seen, 0);
+
+        replay
+            .apply_line(RolloutLine::Item(agent_message_item(
+                session_id,
+                turn_id,
+                2,
+                "after clear",
+            )))
+            .expect("replay post-clear item");
+
+        let texts = replay
+            .pending_items
+            .into_iter()
+            .map(|item| match item.turn_item {
+                TurnItem::AgentMessage(TextItem { text }) => text,
+                other => format!("{other:?}"),
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(texts, vec!["after clear"]);
     }
 }

@@ -160,6 +160,8 @@ impl ServerRuntime {
             "session/title/update" => Some(self.handle_session_title_update(id?, params).await),
             "session/resume" => Some(self.handle_session_resume(connection_id, id?, params).await),
             "session/fork" => Some(self.handle_session_fork(connection_id, id?, params).await),
+            "session/compact" => Some(self.handle_session_compact(id?, params).await),
+            "session/context/clear" => Some(self.handle_session_context_clear(id?, params).await),
             "skills/list" => Some(self.handle_skills_list(id?, params).await),
             "skills/changed" => Some(self.handle_skills_changed(id?, params).await),
             "turn/start" => Some(self.handle_turn_start(id?, params).await),

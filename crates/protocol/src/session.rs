@@ -126,3 +126,29 @@ pub struct SessionForkResult {
     pub session: SessionSummary,
     pub forked_from_session_id: SessionId,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionCompactParams {
+    pub session_id: SessionId,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionCompactResult {
+    pub session: SessionSummary,
+    /// Number of prior messages replaced by the generated summary.
+    pub messages_removed: usize,
+    /// Character length of the summary that now stands in for the prefix.
+    pub summary_chars: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionContextClearParams {
+    pub session_id: SessionId,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionContextClearResult {
+    pub session: SessionSummary,
+    /// Number of messages dropped from the conversation context.
+    pub messages_removed: usize,
+}

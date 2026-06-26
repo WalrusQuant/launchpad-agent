@@ -89,26 +89,47 @@ Anthropic / OpenAI / Google use their native wire formats. The rest share an Ope
 
 ## Slash commands
 
-| Command       | Purpose                                                   |
-|---------------|-----------------------------------------------------------|
-| `/configure`  | Pick a provider, choose a model from the list, add it      |
-| `/model`      | Switch between saved models                               |
-| `/config`     | Show the active `config.toml` (API keys masked)           |
-| `/reasoning`  | Toggle inline model reasoning display                     |
-| `/skills`     | Browse available skills                                   |
-| `/sessions`   | List previous sessions and switch                         |
-| `/new`        | Start a new session                                       |
-| `/rename`     | Rename the current session                                |
-| `/status`     | Show turn / token / model status                          |
-| `/thinking`   | Adjust thinking mode for capable models                   |
-| `/exit`       | Quit                                                      |
+| Command          | Purpose                                                   |
+|------------------|-----------------------------------------------------------|
+| `/help`          | List the available slash commands                         |
+| `/configure`     | Pick a provider, choose a model from the list, add it      |
+| `/model`         | Switch between saved models                               |
+| `/config`        | Show the active `config.toml` (API keys masked)           |
+| `/reasoning`     | Toggle inline model reasoning display                     |
+| `/skills`        | Browse available skills                                   |
+| `/sessions`      | List previous sessions and switch                         |
+| `/new`           | Start a new session                                       |
+| `/rename`        | Rename the current session                                |
+| `/status`        | Show turn / token / model status                          |
+| `/thinking`      | Adjust thinking mode for capable models                   |
+| `/compact`       | Summarize and compact the conversation context           |
+| `/clear`         | Clear the context but keep the session                   |
+| `/export`        | Export the transcript to a Markdown file                 |
+| `/bug` `/feedback` | Show where to report bugs and feedback                  |
+| `/release-notes` | Show the version and release-notes link                  |
+| `/exit`          | Quit                                                      |
 
-`/onboard` is kept as an alias for `/configure`.
+`/onboard` is kept as an alias for `/configure`. Type a line starting with `#`
+to append a note to the project memory file (`AGENTS.md` / `CLAUDE.md`).
+
+## Headless / scripting
+
+Run a single prompt non-interactively and exit — no TUI:
+
+```bash
+lpagent -p "summarize the build errors"      # prompt as an argument
+cat task.md | lpagent -p                      # or pipe it on stdin
+```
+
+Flags (headless): `--model`, `--system-prompt` / `--append-system-prompt`,
+`--allowed-tools` / `--disallowed-tools` (comma-separated),
+`--dangerously-skip-permissions`, `--verbose` / `--debug`. Exit codes are
+`0` (success), `1` (failure), `2` (usage), so scripts can branch on the result.
 
 ## What works today
 
 - **Streaming completions** against Anthropic, OpenAI, Google, or any OpenAI-compatible endpoint
-- **Tool use** — bash, read, write, glob, grep, apply_patch, webfetch, websearch, skill, update_plan, todowrite, question
+- **Tool use** — bash, read, write, glob, grep, ls, apply_patch, webfetch, websearch, skill, update_plan, todowrite, question
 - **MCP runtime** — stdio-transport MCP servers are auto-discovered from `config.toml` and their tools appear in the registry namespaced as `mcp__<server>__<tool>`
 - **Session persistence** via rollout files in `~/.launchpad/agent/sessions/`
 - **LLM-based context compaction** with JSON snapshots (falls back to naive oldest-message drop on summarizer failure)
