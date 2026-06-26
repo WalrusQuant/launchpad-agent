@@ -132,19 +132,16 @@ impl ServerRuntime {
             .and_then(PermissionMode::parse);
         let sandbox_policy = params.sandbox_mode.as_deref().and_then(parse_sandbox_mode);
         let session_config = if permission_mode.is_some() || sandbox_policy.is_some() {
-            let mut cfg = SessionConfig::default();
-            // Seed the sandbox baseline from the server's configured [sandbox]
-            // policy so a request that only overrides `permission_mode` does not
-            // silently drop the configured sandbox. An explicit per-session
-            // `sandbox_mode` still overrides it below.
-            cfg.sandbox_policy = self.deps.sandbox_policy.clone();
-            if let Some(mode) = permission_mode {
-                cfg.permission_mode = mode;
-            }
-            if sandbox_policy.is_some() {
-                cfg.sandbox_policy = sandbox_policy;
-            }
-            Some(cfg)
+            let defaults = SessionConfig::default();
+            Some(SessionConfig {
+                permission_mode: permission_mode.unwrap_or(defaults.permission_mode),
+                // An explicit per-session `sandbox_mode` overrides the server's
+                // configured [sandbox] baseline; otherwise inherit the baseline
+                // so a request that only overrides `permission_mode` does not
+                // silently drop the configured sandbox.
+                sandbox_policy: sandbox_policy.or_else(|| self.deps.sandbox_policy.clone()),
+                ..defaults
+            })
         } else {
             None
         };
@@ -532,7 +529,7 @@ impl ServerRuntime {
                     result: SessionCompactResult {
                         session: summary,
                         messages_removed: outcome.replaced_prefix_len,
-                        summary_chars: outcome.summary.summary_text.len(),
+                        summary_chars: outcome.summary.summary_text.chars().count(),
                     },
                 })
                 .expect("serialize session/compact response")

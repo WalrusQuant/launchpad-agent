@@ -106,7 +106,6 @@ impl Cli {
             allowed_tools: self.allowed_tools.clone(),
             disallowed_tools: self.disallowed_tools.clone(),
             skip_permissions: self.dangerously_skip_permissions,
-            log_level: self.effective_log_level().map(LogLevel::as_str),
         }
     }
 }
@@ -254,6 +253,10 @@ impl LogLevel {
 }
 
 /// Resolved options for a single non-interactive (headless) run.
+///
+/// Logging is intentionally not part of this struct: `install_logging` in
+/// `main` already installs the global subscriber (honoring `--verbose` /
+/// `--debug` via [`Cli::effective_log_level`]) before this runs.
 struct HeadlessOptions {
     prompt: String,
     model: Option<String>,
@@ -262,15 +265,9 @@ struct HeadlessOptions {
     allowed_tools: Vec<String>,
     disallowed_tools: Vec<String>,
     skip_permissions: bool,
-    log_level: Option<&'static str>,
 }
 
 async fn run_headless(options: HeadlessOptions) -> Result<()> {
-    if let Some(level) = options.log_level {
-        let _ = tracing_subscriber::fmt()
-            .with_env_filter(tracing_subscriber::EnvFilter::new(level))
-            .try_init();
-    }
     use lpa_core::{SessionConfig, SessionState, default_base_instructions};
     use lpa_tools::{ToolOrchestrator, ToolRegistry};
 
