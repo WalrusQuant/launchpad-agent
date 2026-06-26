@@ -502,13 +502,21 @@ impl ServerRuntime {
             );
         };
 
-        let mut session = session_arc.lock().await;
-        let model_slug = session
-            .summary
-            .resolved_model
-            .clone()
-            .unwrap_or_else(|| self.deps.default_model.clone());
-        let core_session = Arc::clone(&session.core_session);
+        // Snapshot what compaction needs, then release the outer session lock so
+        // the (potentially slow) provider round-trip does not block other
+        // operations on this session. The `core_session` lock still serializes
+        // against an in-flight turn.
+        let (model_slug, core_session) = {
+            let session = session_arc.lock().await;
+            (
+                session
+                    .summary
+                    .resolved_model
+                    .clone()
+                    .unwrap_or_else(|| self.deps.default_model.clone()),
+                Arc::clone(&session.core_session),
+            )
+        };
         let outcome = {
             let mut core = core_session.lock().await;
             run_llm_compaction(
@@ -522,8 +530,11 @@ impl ServerRuntime {
 
         match outcome {
             Ok(Some(outcome)) => {
-                session.summary.updated_at = Utc::now();
-                let summary = session.summary.clone();
+                let summary = {
+                    let mut session = session_arc.lock().await;
+                    session.summary.updated_at = Utc::now();
+                    session.summary.clone()
+                };
                 serde_json::to_value(SuccessResponse {
                     id: request_id,
                     result: SessionCompactResult {
@@ -590,9 +601,32 @@ impl ServerRuntime {
         };
 
         session.history_items.clear();
+        session.loaded_item_count = 0;
+        // Match the post-clear baseline a resume rebuilds (see ReplayState's
+        // ContextCleared arm), so the live and resumed states agree.
+        session.latest_turn = None;
         session.summary.total_input_tokens = 0;
         session.summary.total_output_tokens = 0;
-        session.summary.updated_at = Utc::now();
+        let updated_at = Utc::now();
+        session.summary.updated_at = updated_at;
+
+        // Persist the clear so a later resume reflects the cleared context
+        // instead of replaying the full pre-clear history. Ephemeral sessions
+        // have no rollout record and need no marker.
+        if let Some(record) = session.record.as_mut() {
+            record.updated_at = updated_at;
+            if let Err(error) = self
+                .rollout_store
+                .append_context_clear(record, messages_removed)
+            {
+                return self.error_response(
+                    request_id,
+                    ProtocolErrorCode::InternalError,
+                    format!("failed to persist context clear: {error}"),
+                );
+            }
+        }
+
         let summary = session.summary.clone();
 
         tracing::info!(session_id = %params.session_id, messages_removed, "cleared session context");

@@ -8,7 +8,7 @@ pub(crate) struct SlashCommandSpec {
 }
 
 /// Canonical slash commands supported by the interactive TUI.
-pub(crate) const SLASH_COMMANDS: [SlashCommandSpec; 17] = [
+pub(crate) const SLASH_COMMANDS: [SlashCommandSpec; 18] = [
     SlashCommandSpec {
         name: "/help",
         description: "List the available slash commands",
@@ -67,6 +67,10 @@ pub(crate) const SLASH_COMMANDS: [SlashCommandSpec; 17] = [
     },
     SlashCommandSpec {
         name: "/bug",
+        description: "Show where to report bugs and feedback",
+    },
+    SlashCommandSpec {
+        name: "/feedback",
         description: "Show where to report bugs and feedback",
     },
     SlashCommandSpec {
