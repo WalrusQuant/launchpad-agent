@@ -5,7 +5,6 @@ mod file_write;
 mod glob;
 mod grep;
 mod invalid;
-mod lsp;
 mod mcp_adapter;
 mod orchestrator;
 mod plan;
@@ -15,7 +14,6 @@ mod registry;
 mod runtime;
 mod shell_exec;
 mod skill;
-mod task;
 mod todo;
 mod tool;
 mod webfetch;
@@ -28,7 +26,6 @@ pub use file_write::FileWriteTool;
 pub use glob::GlobTool;
 pub use grep::GrepTool;
 pub use invalid::InvalidTool;
-pub use lsp::LspTool;
 pub use mcp_adapter::{
     MCP_TOOL_PREFIX, McpToolAdapter, flatten_call_tool_result, register_mcp_tools,
 };
@@ -39,7 +36,6 @@ pub use read::ReadTool;
 pub use registry::*;
 pub use runtime::*;
 pub use skill::SkillTool;
-pub use task::TaskTool;
 pub use todo::TodoWriteTool;
 pub use tool::{Tool, ToolOutput, ToolProgressEvent};
 pub use webfetch::WebFetchTool;
@@ -49,10 +45,8 @@ use std::sync::Arc;
 
 /// Register all built-in tools into a registry.
 ///
-/// `TaskTool` and `LspTool` are deliberately NOT registered — they are stubs
-/// (see `crates/CLAUDE.md`). Sending their schemas would cost tokens on every
-/// turn for tools that silently no-op. When a real implementation lands,
-/// re-add them here.
+/// Subagent dispatch (`task`) and LSP (`lsp`) tools are not implemented; when
+/// they land, add their tool impls and register them here.
 pub fn register_builtin_tools(registry: &mut ToolRegistry) {
     registry.register(Arc::new(BashTool));
     registry.register(Arc::new(ReadTool));
@@ -104,9 +98,9 @@ mod tests {
     }
 
     #[test]
-    fn stub_tools_are_not_registered() {
-        // TaskTool and LspTool are stubs — omitted from the default
-        // registration to avoid wasting tokens on non-functional schemas.
+    fn unimplemented_tools_are_not_registered() {
+        // `task` (subagent dispatch) and `lsp` are not implemented; guard against
+        // them being registered before a real implementation exists.
         let mut registry = ToolRegistry::new();
         register_builtin_tools(&mut registry);
         assert!(registry.get("task").is_none());

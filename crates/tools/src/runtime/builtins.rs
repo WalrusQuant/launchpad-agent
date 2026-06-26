@@ -95,8 +95,6 @@ pub fn register_builtin_runtime_tools(registry: &RuntimeToolRegistry) {
             Vec::new(),
         ),
     );
-    // TaskTool is a stub — skip registration so its schema doesn't ship with
-    // every turn. Re-add here when real subagent dispatch lands.
     register_legacy_builtin(
         registry,
         Arc::new(TodoWriteTool),
@@ -157,8 +155,6 @@ pub fn register_builtin_runtime_tools(registry: &RuntimeToolRegistry) {
             vec![ToolCapabilityTag::WriteFiles],
         ),
     );
-    // LspTool is a stub — skip registration so its schema doesn't ship with
-    // every turn. Re-add here when a real LSP client lands.
     register_legacy_builtin(
         registry,
         Arc::new(PlanTool),
