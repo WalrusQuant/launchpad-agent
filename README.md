@@ -35,6 +35,12 @@ lpagent
 
 This installs the `lpagent` binary to `~/.cargo/bin`, so you can run `lpagent` from any directory. (Make sure `~/.cargo/bin` is on your `PATH` — rustup adds it by default.)
 
+To update an installed copy, pull the latest source and reinstall (there is no self-updater yet):
+
+```bash
+git pull && cargo install --path crates/cli --force
+```
+
 Prefer not to install? Build and run it in place instead:
 
 ```bash
