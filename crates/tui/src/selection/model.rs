@@ -143,11 +143,7 @@ impl TuiApp {
     pub(crate) fn preset_model_picker_entries(&self) -> Vec<ModelListEntry> {
         let mut entries = Vec::new();
 
-        if let Some(preset) = self
-            .onboarding_preset_id
-            .as_deref()
-            .and_then(lpa_core::preset_by_id)
-        {
+        if let Some(preset) = self.current_preset() {
             for model in preset.models {
                 entries.push(ModelListEntry {
                     slug: model.slug.to_string(),
@@ -161,7 +157,13 @@ impl TuiApp {
             }
         }
 
-        entries.push(ModelListEntry {
+        entries.push(self.custom_model_row());
+        entries
+    }
+
+    /// The trailing "Custom model…" row shared by the onboarding model pickers.
+    pub(crate) fn custom_model_row(&self) -> ModelListEntry {
+        ModelListEntry {
             slug: "__custom__".to_string(),
             display_name: "Custom model…".to_string(),
             provider: self.provider,
@@ -169,9 +171,7 @@ impl TuiApp {
             is_current: false,
             is_builtin: false,
             is_custom_mode: true,
-        });
-
-        entries
+        }
     }
 
     pub(crate) fn onboarding_model_picker_entries(&self) -> Vec<ModelListEntry> {
@@ -205,15 +205,7 @@ impl TuiApp {
         }
 
         if self.show_model_onboarding {
-            entries.push(ModelListEntry {
-                slug: "__custom__".to_string(),
-                display_name: "Custom model".to_string(),
-                provider: self.provider,
-                description: Some("enter a model name manually".to_string()),
-                is_current: false,
-                is_builtin: false,
-                is_custom_mode: true,
-            });
+            entries.push(self.custom_model_row());
         }
 
         if entries.is_empty() {

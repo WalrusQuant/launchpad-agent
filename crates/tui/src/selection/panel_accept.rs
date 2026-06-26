@@ -42,14 +42,17 @@ impl TuiApp {
                 if self.show_model_onboarding && self.onboarding_preset_id.is_some() {
                     if selected.is_custom_mode {
                         self.begin_preset_custom_model();
-                    } else if let Err(error) = self.proceed_with_preset_model(selected.slug.clone())
-                    {
-                        self.push_item(
-                            TranscriptItemKind::Error,
-                            "Onboarding failed",
-                            error.to_string(),
-                        );
-                        self.status_message = "Failed to start validation".to_string();
+                    } else {
+                        // Curated pick is never a manually-typed slug.
+                        self.onboarding_selected_model_is_custom = false;
+                        if let Err(error) = self.proceed_with_preset_model(selected.slug.clone()) {
+                            self.push_item(
+                                TranscriptItemKind::Error,
+                                "Onboarding failed",
+                                error.to_string(),
+                            );
+                            self.status_message = "Failed to start validation".to_string();
+                        }
                     }
                     return true;
                 }

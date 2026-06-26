@@ -92,9 +92,7 @@ impl TuiApp {
             .position(|entry| entry.is_current)
             .unwrap_or(0);
         let title = self
-            .onboarding_preset_id
-            .as_deref()
-            .and_then(lpa_core::preset_by_id)
+            .current_preset()
             .map(|preset| format!("{} — pick a model", preset.display_name))
             .unwrap_or_else(|| "Pick a model".to_string());
         self.aux_panel = Some(AuxPanel {

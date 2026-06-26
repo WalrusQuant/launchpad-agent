@@ -633,19 +633,18 @@ impl TuiApp {
             return;
         }
         self.input.clear();
-        let preset = self
-            .onboarding_preset_id
-            .as_deref()
-            .and_then(lpa_core::preset_by_id);
-        let label = preset
-            .map(|p| p.display_name.to_string())
-            .unwrap_or_else(|| "provider".to_string());
+        let preset = self.current_preset();
+        let label = preset.map(|p| p.display_name).unwrap_or("provider");
         let needs_key = preset.map(|p| !p.api_key_env_vars.is_empty()).unwrap_or(true);
 
         if needs_key {
             self.onboarding_selected_api_key = None;
             self.onboarding_api_key_pending = true;
-            self.onboarding_prompt = Some(format!("{label} API key"));
+            // Mirror the initial prompt so the env-var fallback stays discoverable.
+            self.onboarding_prompt = Some(match preset.and_then(|p| p.api_key_env_vars.first()) {
+                Some(var) => format!("{label} API key (also read from ${var})"),
+                None => format!("{label} API key"),
+            });
             self.status_message = format!("Enter a different API key for {label}");
         } else {
             let hint = preset.map(|p| p.slug_hint).unwrap_or("model slug");
@@ -672,12 +671,7 @@ impl TuiApp {
             self.onboarding_prompt_history
                 .push(format!("model> {model}"));
 
-            let is_custom_preset = self
-                .onboarding_preset_id
-                .as_deref()
-                .and_then(lpa_core::preset_by_id)
-                .map(|p| p.is_custom)
-                .unwrap_or(false);
+            let is_custom_preset = self.current_preset().map(|p| p.is_custom).unwrap_or(false);
 
             // A curated preset already knows its base URL — resolve/ask for the
             // key (reusing a saved one) and validate.
@@ -757,12 +751,9 @@ impl TuiApp {
             }
 
             // Fallback: a preset still needs a model slug.
-            if let Some(preset_id) = self.onboarding_preset_id.clone() {
-                let preset = lpa_core::preset_by_id(&preset_id);
-                let label = preset
-                    .map(|p| p.display_name.to_string())
-                    .unwrap_or_else(|| preset_id.clone());
-                let hint = preset.map(|p| p.slug_hint).unwrap_or("model slug");
+            if let Some(preset) = self.current_preset() {
+                let label = preset.display_name;
+                let hint = preset.slug_hint;
                 self.onboarding_custom_model_pending = true;
                 self.input.clear();
                 self.onboarding_prompt = Some(format!("model slug for {label} — {hint}"));

@@ -65,6 +65,13 @@ impl TuiApp {
         self.input.clear();
     }
 
+    /// The provider preset chosen during onboarding, if any.
+    pub(crate) fn current_preset(&self) -> Option<&'static lpa_core::ProviderPreset> {
+        self.onboarding_preset_id
+            .as_deref()
+            .and_then(lpa_core::preset_by_id)
+    }
+
     fn existing_api_key_for_preset(&self, preset_base_url: Option<&str>) -> Option<String> {
         let preset_base_url = preset_base_url?;
         self.saved_models
@@ -196,10 +203,7 @@ impl TuiApp {
         self.onboarding_custom_model_pending = false;
         self.input.clear();
 
-        let preset = self
-            .onboarding_preset_id
-            .as_deref()
-            .and_then(lpa_core::preset_by_id);
+        let preset = self.current_preset();
 
         if self.onboarding_selected_api_key.is_none()
             && let Some(preset) = preset
@@ -238,24 +242,14 @@ impl TuiApp {
         self.onboarding_custom_model_pending = true;
         self.onboarding_selected_model = None;
         self.onboarding_selected_model_is_custom = true;
-        let hint = self
-            .onboarding_preset_id
-            .as_deref()
-            .and_then(lpa_core::preset_by_id)
-            .map(|p| p.slug_hint)
-            .unwrap_or("model slug");
+        let hint = self.current_preset().map(|p| p.slug_hint).unwrap_or("model slug");
         self.onboarding_prompt = Some(format!("model slug — {hint}"));
         self.input.clear();
         self.status_message = "Enter a model slug".to_string();
     }
 
     pub(crate) fn handle_escape(&mut self) -> bool {
-        let preset_needs_model_list = self
-            .onboarding_preset_id
-            .as_deref()
-            .and_then(lpa_core::preset_by_id)
-            .map(|p| !p.is_custom)
-            .unwrap_or(false);
+        let preset_needs_model_list = self.current_preset().map(|p| !p.is_custom).unwrap_or(false);
 
         if self.onboarding_api_key_pending {
             self.onboarding_api_key_pending = false;
