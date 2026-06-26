@@ -2,6 +2,25 @@
 
 use dirs::home_dir;
 use std::path::PathBuf;
+use std::sync::OnceLock;
+
+/// Process-global override for the resolved Launchpad home.
+///
+/// Set only by [`override_lpa_home`], which is intended for tests that exercise
+/// config persistence without writing into the user's real
+/// `~/.launchpad/agent`. Never set in production, so [`find_lpa_home`] behaves
+/// identically there.
+static HOME_OVERRIDE: OnceLock<PathBuf> = OnceLock::new();
+
+/// Pins the Launchpad home directory for the lifetime of the process, taking
+/// precedence over `LPA_HOME` and the default location.
+///
+/// This exists so tests can redirect config reads/writes to a temp directory
+/// without mutating the process environment (which is unsound under
+/// multi-threaded test execution). The first call wins; later calls are no-ops.
+pub fn override_lpa_home(path: PathBuf) {
+    let _ = HOME_OVERRIDE.set(path);
+}
 
 fn strip_unc_prefix(path: PathBuf) -> PathBuf {
     #[cfg(windows)]
@@ -23,6 +42,9 @@ fn strip_unc_prefix(path: PathBuf) -> PathBuf {
 /// - If `LPA_HOME` is not set, this function does not verify that the
 ///   directory exists.
 pub fn find_lpa_home() -> std::io::Result<PathBuf> {
+    if let Some(path) = HOME_OVERRIDE.get() {
+        return Ok(path.clone());
+    }
     let lpa_home_env = std::env::var("LPA_HOME").ok().filter(|val| !val.is_empty());
     find_lpa_home_from_env(lpa_home_env.as_deref())
 }

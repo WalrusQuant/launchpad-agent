@@ -16,7 +16,17 @@ use crate::{
     worker::QueryWorkerHandle,
 };
 
+/// Redirects all config persistence to a throwaway temp directory so tests that
+/// exercise the save path never clobber the developer's real
+/// `~/.launchpad/agent/config.toml`. Idempotent — the first call pins the path.
+fn isolate_test_home() {
+    let dir = std::env::temp_dir().join("lpa-tui-test-home");
+    let _ = std::fs::create_dir_all(&dir);
+    lpa_utils::override_lpa_home(dir);
+}
+
 fn test_app() -> TuiApp {
+    isolate_test_home();
     TuiApp {
         model: "test-model".to_string(),
         provider: ProviderFamily::anthropic(),
