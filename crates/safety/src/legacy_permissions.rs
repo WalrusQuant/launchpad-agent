@@ -167,8 +167,19 @@ impl RuleBasedPolicy {
     fn evaluate_sandbox(&self, request: &PermissionRequest) -> Option<PermissionDecision> {
         let sb = self.sandbox.as_ref()?;
         use crate::SandboxMode;
-        if matches!(sb.policy.mode, SandboxMode::Unrestricted) {
-            return None;
+        match sb.policy.mode {
+            // No sandbox — defer to the fallback mode / rules.
+            SandboxMode::Unrestricted => return None,
+            // Apply the local rule-based sandbox below.
+            SandboxMode::Restricted => {}
+            // Deferring to an external sandbox is not implemented; fail closed
+            // rather than silently applying the local rules under a misleading
+            // mode. (Currently unreachable — no config path produces External.)
+            SandboxMode::External => {
+                return Some(PermissionDecision::Deny {
+                    reason: "external sandbox mode is not implemented".into(),
+                });
+            }
         }
 
         let is_shell = matches!(request.resource, ResourceKind::ShellExec)
@@ -434,6 +445,29 @@ mod tests {
             .check(&file_write_request(Some("/tmp/whatever")))
             .await;
         assert!(matches!(decision, PermissionDecision::Deny { .. }));
+    }
+
+    #[tokio::test]
+    async fn sandbox_external_mode_denies_as_unimplemented() {
+        use super::SandboxContext;
+        use crate::{SandboxMode, SandboxPolicyRecord};
+        let policy = RuleBasedPolicy::with_sandbox(
+            PermissionMode::AutoApprove,
+            SandboxContext {
+                policy: SandboxPolicyRecord {
+                    mode: SandboxMode::External,
+                    workspace_write: true,
+                },
+                cwd: std::env::temp_dir(),
+            },
+        );
+        let decision = policy
+            .check(&file_write_request(Some("/tmp/whatever")))
+            .await;
+        let PermissionDecision::Deny { reason } = decision else {
+            panic!("external sandbox mode should deny");
+        };
+        assert!(reason.contains("external sandbox mode is not implemented"));
     }
 
     #[tokio::test]

@@ -208,6 +208,25 @@ fn resolve_relative_rejects_absolute_paths() {
     assert!(error.to_string().contains("NEVER ABSOLUTE"));
 }
 
+#[test]
+fn resolve_relative_rejects_parent_escape() {
+    let base = std::path::Path::new("/workspace/project");
+    let error = resolve_relative(base, "../../etc/passwd")
+        .expect_err("parent-dir escape should be rejected");
+    assert!(error.to_string().contains("escapes the workspace root"));
+}
+
+#[test]
+fn resolve_relative_normalizes_interior_parent_dirs() {
+    // `..` that stays within the root resolves normally rather than escaping.
+    let base = std::path::Path::new("/workspace/project");
+    let resolved = resolve_relative(base, "src/../README.md").expect("interior .. is fine");
+    assert_eq!(
+        resolved,
+        std::path::Path::new("/workspace/project/README.md")
+    );
+}
+
 #[tokio::test]
 async fn execute_applies_changes_and_returns_summary() {
     let cwd = unique_temp_dir("execute");
