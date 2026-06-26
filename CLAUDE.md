@@ -53,8 +53,8 @@ Rust 1.85+. All 421 tests currently pass — keep it that way.
 ## Request flow (where to start when debugging)
 
 1. `crates/cli/src/main.rs` — command dispatch
-2. `crates/server/src/runtime.rs` — JSON-RPC handlers, turn scheduling, approval manager (2,098 lines — large)
-3. `crates/core/src/query.rs` — streaming loop, tool-call handling, (naive) compaction (1,170 lines — large)
+2. `crates/server/src/runtime.rs` (180 lines) + `crates/server/src/runtime/` — JSON-RPC handlers, turn scheduling, approval manager. Already split into `runtime/{execute_turn,handlers_session,handlers_turn,...}.rs`.
+3. `crates/core/src/query/mod.rs` (~570 lines) — streaming loop, tool-call handling, runaway guard, compaction trigger. Compaction helpers in `crates/core/src/query/compaction.rs`.
 4. `crates/tools/src/orchestrator.rs` — permission check → tool dispatch; `Ask` decisions go through `ApprovalChannel`
 5. `crates/provider/src/{anthropic,openai,google}/` — provider-specific wire format
 
@@ -97,27 +97,39 @@ See `wishlist.md` and `implementation-plan.md` for the current roadmap.
 
 ## Known oversize files (don't grow further; split when touching)
 
-Already over the 800-line guideline — adding new functionality to these should go into new sibling modules:
+Sizes verified 2026-06. Several files the older notes flagged are already split
+(server `runtime.rs` → `runtime/`, `query.rs` → `query/`, `apply_patch.rs` →
+`apply_patch/`, `render/mod.rs`, `safety/lib.rs`, `tui/runtime.rs`). Still over
+the 800-line guideline — adding new functionality should go into new sibling
+modules:
 
-- `crates/server/src/runtime.rs` (~2,200) — could split into `runtime/{session,events,approval,mcp}.rs`
-- `crates/tools/src/apply_patch.rs` (1,489) — could split parser vs. applier
-- `crates/provider/src/openai/chat_completions.rs` (1,459) — could extract response parsing
-- `crates/core/src/query.rs` (1,170) — author flagged as "too lengthy" in code comments
-- `crates/tui/src/worker.rs` (1,244), `render/mod.rs` (1,130), `selection.rs` (~1,250), `tests.rs` (1,225)
-- `crates/provider/src/anthropic/messages.rs` (1,089), `openai/chat_completions/stream.rs` (~1,150)
-- `crates/safety/src/lib.rs` (892)
+- `crates/tui/src/tests.rs` (1,606) — test file; split into a `tests/` dir by domain when touched
+- `crates/provider/src/openai/chat_completions.rs` (1,469) — could extract response parsing
+- `crates/provider/src/openai/chat_completions/stream.rs` (1,125) — streaming state machine (largely irreducible)
+- `crates/provider/src/anthropic/messages.rs` (1,105) — could split request build vs. response parse
+
+Near the line (700–800, watch when editing): `apply_patch/tests.rs` (771),
+`render/markdown.rs` (755), `openai/responses.rs` (750), `safety/lib.rs` (748),
+`tui/worker/mod.rs` (733), `protocol/model.rs` (720), `render/mod.rs` (710),
+`google/generate_content.rs` (687), `server/persistence.rs` (675).
+
+The big provider wire-format files are large because of irreducible
+wire-format complexity, not accidental coupling — split only if a clean seam
+(request-build vs. response-parse) appears.
 
 ## Known issues / footguns
 
-- **Provider adapters `panic!` on malformed responses** instead of returning `Err` — 6 sites across anthropic/openai/google message parsers. Don't copy this pattern for new providers.
-- **Tool input parsing uses `unwrap_or` defaults** rather than strict validation. If the model sends wrong-type JSON, tools silently run with defaults.
-- **Windows shell detection is broken** — always returns `cmd.exe`. See TODO in `crates/core/src/query.rs` around line 410.
+- **Provider request serialization `expect`** — `crates/provider/src/anthropic/messages.rs:658` does `serde_json::to_value(body).expect(...)`. Low risk (only fails on OOM of a struct we just built), but don't copy the pattern; return `Err` in new providers. (The older "6 panic sites on malformed responses" note was wrong — the other `expect!`/`panic!` are all in `#[cfg(test)]`.)
+- **Tool input parsing uses `unwrap_or` defaults** for *optional* fields (e.g. `bash` timeout/tty), so wrong-typed JSON for those silently falls back to a safe default. Required fields ARE validated (`.ok_or_else`), and tool-call argument JSON that fails to parse is now surfaced to the model as a recoverable error tool_result rather than run as `{}` — see the tool-call assembly in `crates/core/src/query/mod.rs`.
+- **Runaway guard:** the agent loop bails out after `MAX_AUTONOMOUS_STEPS` (1000) consecutive model calls without fresh user input (`crates/core/src/query/mod.rs`). Resets on new user input.
+- **apply_patch path safety:** `resolve_relative` (`crates/tools/src/apply_patch/apply.rs`) resolves `.`/`..` lexically and rejects any reference that escapes the workspace root, independent of the sandbox.
+- **Windows shell detection** — shell resolution lives in `crates/tools/src/shell_exec.rs` (`resolve_shell`); it handles cmd/powershell but Windows paths are lightly tested. Verify before relying on it.
 - Rebrand from the upstream ClawCR project is complete across source, config, env vars, and docs. If you see stray `clawcr` / `ClawCodeRust` strings outside `target/` or historical notes, fix them.
 
 ## Working rules for Claude in this repo
 
-1. **Plan before touching large files** (runtime.rs, apply_patch.rs, query.rs). Ask whether to split before adding.
-2. **Run `cargo test --workspace` after changes** — 421 tests is the pass/fail signal. All green is the baseline.
+1. **Plan before touching large files** (see "Known oversize files" — the biggest now are the provider wire-format parsers and `tui/src/tests.rs`). Ask whether to split before adding.
+2. **Run `cargo test --workspace` after changes** — ~449 tests is the pass/fail signal. All green is the baseline. Also run `cargo fmt --all -- --check` (CI gates on rustfmt) and `cargo clippy` before pushing.
 3. **Follow `AGENTS.md`** (clippy-style formatting, module size, no `bool` positional params). Don't restate its rules in code review; enforce them in diffs.
 4. **Don't fabricate status** — if something is stubbed, say so. The wishlist/plan docs are the source of truth on what's "done".
 5. **Keep user-facing docs (`README.md`, `docs/*.md`) in sync** when you change behavior. Docs have already drifted from code; don't widen the gap.
