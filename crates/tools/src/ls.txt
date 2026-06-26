@@ -1,0 +1,12 @@
+List the entries (files and subdirectories) of a single directory.
+
+Use this when you want a quick, non-recursive view of what a directory
+contains. For recursive matching by pattern use `glob`; for searching file
+contents use `grep`.
+
+Input:
+- `path` (optional): the directory to list. Relative paths resolve against the
+  current working directory. Defaults to the working directory when omitted.
+
+Output: one entry per line. Directories are suffixed with `/` and sorted before
+files; entries are alphabetical within each group.

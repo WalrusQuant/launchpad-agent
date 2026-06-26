@@ -8,7 +8,11 @@ pub(crate) struct SlashCommandSpec {
 }
 
 /// Canonical slash commands supported by the interactive TUI.
-pub(crate) const SLASH_COMMANDS: [SlashCommandSpec; 11] = [
+pub(crate) const SLASH_COMMANDS: [SlashCommandSpec; 17] = [
+    SlashCommandSpec {
+        name: "/help",
+        description: "List the available slash commands",
+    },
     SlashCommandSpec {
         name: "/model",
         description: "Show or change the active model",
@@ -48,6 +52,26 @@ pub(crate) const SLASH_COMMANDS: [SlashCommandSpec; 11] = [
     SlashCommandSpec {
         name: "/status",
         description: "Show current session status",
+    },
+    SlashCommandSpec {
+        name: "/compact",
+        description: "Summarize and compact the conversation context",
+    },
+    SlashCommandSpec {
+        name: "/clear",
+        description: "Clear the conversation context (keeps the session)",
+    },
+    SlashCommandSpec {
+        name: "/export",
+        description: "Export the transcript to a Markdown file",
+    },
+    SlashCommandSpec {
+        name: "/bug",
+        description: "Show where to report bugs and feedback",
+    },
+    SlashCommandSpec {
+        name: "/release-notes",
+        description: "Show the version and release notes link",
     },
     SlashCommandSpec {
         name: "/exit",

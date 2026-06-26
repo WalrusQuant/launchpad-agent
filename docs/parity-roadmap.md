@@ -9,30 +9,30 @@ Legend: `✅` done · `◑` partial · `✗` missing. Every `◑`/`✗` has conc
 
 ## 1. CLI invocation & headless
 
-- ✅ Interactive TUI; ✅ `onboard`, `prompt` (one-shot), `doctor`, `run`, `server` subcommands
-- ✗ **`-p` / `--print` non-interactive mode** (run, emit result, exit; no TUI)
+- ✅ Interactive TUI; ✅ `onboard`, `prompt` (one-shot), `doctor`, `server` subcommands
+- ✅ **`-p` / `--print` non-interactive mode** (run, emit result, exit; no TUI)
 - ✗ **`--output-format text|json|stream-json`** (structured machine output)
 - ✗ **`--input-format text|stream-json`**
-- ✗ **stdin piping** (`cat x | lpagent -p "..."`)
+- ✅ **stdin piping** (`cat x | lpagent -p`)
 - ✗ **`--continue` (resume most recent)** and **`--resume <id>`** flags
-- ✗ **`--model` / `--fallback-model` flags**
+- ✅ **`--model` flag**; ✗ **`--fallback-model`**
 - ✗ **`--permission-mode` flag**
-- ✗ **`--allowed-tools` / `--disallowed-tools` flags**
-- ✗ **`--append-system-prompt` / `--system-prompt` flags**
+- ✅ **`--allowed-tools` / `--disallowed-tools` flags**
+- ✅ **`--append-system-prompt` / `--system-prompt` flags**
 - ✗ **`--add-dir` (extra working roots)**
 - ✗ **`--mcp-config` / `--settings` flags**
 - ✗ **`--session-id` flag**
-- ✗ **`--verbose` / `--debug` flags**
-- ✗ **`--dangerously-skip-permissions`**
-- ✗ **Documented exit codes** for scripting
+- ✅ **`--verbose` / `--debug` flags**
+- ✅ **`--dangerously-skip-permissions`**
+- ✅ **Documented exit codes** for scripting (0 success / 1 failure / 2 usage)
 - ✗ **SDK / library API** (embeddable client contract for the Launchpad terminal)
 
 ## 2. Slash commands
 
 - ✅ `/config` `/configure` `/exit` `/model` `/new` `/reasoning` `/rename` `/sessions` `/skills` `/status` `/thinking`
-- ✗ **`/help`**
-- ✗ **`/clear`** (reset context, keep session)
-- ✗ **`/compact`** (manual, with optional focus)
+- ✅ **`/help`**
+- ✅ **`/clear`** (reset context, keep session)
+- ✅ **`/compact`** (manual; focus arg not yet supported)
 - ✗ **`/cost`** (usage + $)
 - ✗ **`/context`** (context-window usage visualization)
 - ✗ **`/init`** (scan repo → generate `AGENTS.md`)
@@ -43,17 +43,17 @@ Legend: `✅` done · `◑` partial · `✗` missing. Every `◑`/`✗` has conc
 - ✗ **`/mcp`** (inspect/manage MCP servers, auth)
 - ✗ **`/permissions`** (view/edit permission rules + mode)
 - ✗ **`/login` / `/logout`** (provider auth)
-- ✗ **`/export`** (transcript export)
+- ✅ **`/export`** (transcript export to Markdown)
 - ✗ **`/rewind`** (checkpoint restore)
 - ✗ **`/vim`** (toggle vim mode)
 - ✗ **`/theme`** (switch theme)
 - ✗ **`/output-style`** (switch persona/output style)
 - ✗ **`/statusline`** (configure custom status line)
 - ✗ **`/add-dir`** (add working root mid-session)
-- ✗ **`/bug` / `/feedback`** (report)
+- ✅ **`/bug` / `/feedback`** (report link)
 - ✗ **`/plugin`** (manage plugins)
 - ✗ **`/install-github-app`** (GitHub Action setup)
-- ✗ **`/release-notes` / `/upgrade`** (version + self-update)
+- ◑ **`/release-notes`** (version + link) ✅ · ✗ **`/upgrade`** (self-update)
 - ✗ **User-defined custom slash commands** — see §7
 
 ## 3. Configuration & settings
@@ -71,10 +71,10 @@ Legend: `✅` done · `◑` partial · `✗` missing. Every `◑`/`✗` has conc
 
 - ◑ **Project memory** — prefetch exists; missing: load `AGENTS.md`/`CLAUDE.md` up the dir tree + user + enterprise scope, defined precedence
 - ✗ **`@path` imports inside memory files**
-- ✗ **`#`-prefixed input appends a memory line**
+- ✅ **`#`-prefixed input appends a memory line** (to `AGENTS.md`/`CLAUDE.md`)
 - ✗ **`/memory` editing**, ✗ **`/init` generation**
 - ✗ **`@file` / `@dir` / `@symbol` mentions in the prompt** (+ autocomplete)
-- ✅ Auto-compaction (LLM + naive fallback); ✗ **manual `/compact`**; ✗ **`/clear`**
+- ✅ Auto-compaction (LLM + naive fallback); ✅ **manual `/compact`**; ✅ **`/clear`**
 - ✗ **`/context` usage visualization**
 
 ## 5. Tools (built-in)
@@ -83,7 +83,7 @@ Legend: `✅` done · `◑` partial · `✗` missing. Every `◑`/`✗` has conc
 - ✗ **Bash background execution** + **`BashOutput`** (poll) + **`KillShell`**
 - ✗ **Read images** (→ image content block), **PDF** (pages), **Jupyter notebooks** (cells)
 - ✗ **`NotebookEdit` tool**
-- ✗ **`LS` / list-directory tool** (currently only Glob)
+- ✅ **`ls` / list-directory tool**
 - ✗ **`ExitPlanMode` tool** (plan-mode approval) — see §11
 - ✗ **`Task` tool** (subagent dispatch) — see §6
 - ✗ **Git/PR tooling** (structured status/diff/commit; PR create/view) — currently raw Bash only
@@ -189,7 +189,7 @@ Legend: `✅` done · `◑` partial · `✗` missing. Every `◑`/`✗` has conc
 ## 16. Sessions / history
 
 - ✅ persistence · ✅ resume · ✅ fork
-- ✗ **`/export` / share** (markdown/json transcript; optional share link)
+- ◑ **`/export`** (Markdown transcript) ✅ · ✗ **JSON export / share link**
 - ✗ **Conversation search** (across sessions/messages)
 - ✗ **CLI `--continue` / `--resume`** (see §1)
 
@@ -211,8 +211,7 @@ Legend: `✅` done · `◑` partial · `✗` missing. Every `◑`/`✗` has conc
 
 ## 19. Ops / lifecycle
 
-- ✅ `/doctor`
-- ✗ **`/help`**, ✗ **`/bug` / `/feedback`**, ✗ **`/release-notes`**
+- ✅ `/doctor` · ✅ `/help` · ✅ `/bug` / `/feedback` · ✅ `/release-notes`
 - ✗ **Self-update / version check / `/upgrade`**
 - ✗ **`/privacy-settings`**
 - ◑ **Skills** — have skill tool + catalog; missing **hot-reload** (`watch_for_changes` config exists, no fs-events impl)

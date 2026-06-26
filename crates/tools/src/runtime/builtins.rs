@@ -5,7 +5,7 @@ use crate::runtime::{
     ToolDefinitionSpec, ToolExecutionMode, ToolName, ToolOutputMode,
 };
 use crate::{
-    ApplyPatchTool, BashTool, FileWriteTool, GlobTool, GrepTool, InvalidTool, PlanTool,
+    ApplyPatchTool, BashTool, FileWriteTool, GlobTool, GrepTool, InvalidTool, LsTool, PlanTool,
     QuestionTool, ReadTool, SkillTool, TodoWriteTool, Tool, WebFetchTool, WebSearchTool,
 };
 
@@ -66,6 +66,18 @@ pub fn register_builtin_runtime_tools(registry: &RuntimeToolRegistry) {
             "grep",
             GrepTool.description(),
             GrepTool.input_schema(),
+            ToolOutputMode::Text,
+            ToolExecutionMode::ReadOnly,
+            vec![ToolCapabilityTag::SearchWorkspace],
+        ),
+    );
+    register_legacy_builtin(
+        registry,
+        Arc::new(LsTool),
+        runtime_definition(
+            "ls",
+            LsTool.description(),
+            LsTool.input_schema(),
             ToolOutputMode::Text,
             ToolExecutionMode::ReadOnly,
             vec![ToolCapabilityTag::SearchWorkspace],

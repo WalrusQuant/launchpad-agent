@@ -144,9 +144,56 @@ async fn slash_exit_requests_shutdown() {
 }
 
 #[tokio::test]
+async fn slash_help_lists_commands() {
+    let mut app = test_app();
+
+    app.handle_slash_command("/help".to_string())
+        .expect("help command should succeed");
+
+    assert_eq!(
+        app.aux_panel.as_ref().map(|panel| panel.title.as_str()),
+        Some("Commands")
+    );
+    assert!(app.aux_panel.as_ref().is_some_and(|panel| matches!(
+        &panel.content,
+        AuxPanelContent::Text(body) if body.contains("/help") && body.contains("/exit")
+    )));
+}
+
+#[tokio::test]
+async fn slash_export_writes_transcript_file() {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let mut app = test_app();
+    app.cwd = dir.path().to_path_buf();
+    app.push_item(TranscriptItemKind::User, "You", "hello there");
+
+    app.handle_slash_command("/export".to_string())
+        .expect("export command should succeed");
+
+    let exported = std::fs::read_to_string(dir.path().join("lpagent-transcript.md"))
+        .expect("export file written");
+    assert!(exported.contains("# lpagent transcript"));
+    assert!(exported.contains("hello there"));
+}
+
+#[tokio::test]
+async fn hash_prefixed_input_appends_memory_line() {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let mut app = test_app();
+    app.cwd = dir.path().to_path_buf();
+
+    app.handle_submission("# always run the tests".to_string())
+        .expect("memory note should be accepted");
+
+    let memory =
+        std::fs::read_to_string(dir.path().join("AGENTS.md")).expect("memory file written");
+    assert!(memory.contains("- always run the tests"));
+}
+
+#[tokio::test]
 async fn slash_completion_applies_selected_command() {
     let mut app = test_app();
-    app.input.replace("/e");
+    app.input.replace("/exi");
 
     assert!(app.try_apply_slash_suggestion());
     assert_eq!(app.input.text(), "/exit");

@@ -34,6 +34,15 @@ impl ToolRegistry {
         self.tools.values().collect()
     }
 
+    /// Drop every registered tool whose name does not satisfy `keep`.
+    ///
+    /// Used by headless invocations to honor `--allowed-tools` /
+    /// `--disallowed-tools` filters before the registry is frozen for the
+    /// lifetime of the run.
+    pub fn retain<F: FnMut(&str) -> bool>(&mut self, mut keep: F) {
+        self.tools.retain(|name, _| keep(name));
+    }
+
     /// Build tool definitions suitable for the model API.
     pub fn tool_definitions(&self) -> Vec<ToolDefinition> {
         self.tools

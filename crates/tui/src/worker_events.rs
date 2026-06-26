@@ -329,6 +329,37 @@ impl TuiApp {
                 self.status_message = "New session ready; send a prompt to start it".to_string();
                 self.emit_inline_system_note("New session ready; send a prompt to start it");
             }
+            WorkerEvent::ContextCompacted {
+                messages_removed,
+                summary_chars,
+            } => {
+                self.close_inline_assistant_stream();
+                let note = format!(
+                    "Compacted context: replaced {messages_removed} messages with a {summary_chars}-char summary"
+                );
+                self.status_message = "Context compacted".to_string();
+                self.emit_inline_system_note(&note);
+            }
+            WorkerEvent::ContextCleared { messages_removed } => {
+                self.close_inline_assistant_stream();
+                self.aux_panel = None;
+                self.aux_panel_selection = 0;
+                self.pending_status_index = None;
+                self.pending_assistant_index = None;
+                self.pending_reasoning_index = None;
+                self.pending_tool_items.clear();
+                self.busy = false;
+                self.total_input_tokens = 0;
+                self.total_output_tokens = 0;
+                self.turn_count = 0;
+                self.transcript.clear();
+                self.follow_output = true;
+                self.scroll = 0;
+                let note =
+                    format!("Cleared {messages_removed} messages; session ready for a fresh start");
+                self.status_message = "Context cleared".to_string();
+                self.emit_inline_system_note(&note);
+            }
             WorkerEvent::SessionSwitched {
                 session_id,
                 title,

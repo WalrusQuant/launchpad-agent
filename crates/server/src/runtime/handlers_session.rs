@@ -3,11 +3,15 @@ use std::sync::Arc;
 use chrono::Utc;
 use tokio::sync::Mutex;
 
-use lpa_core::{SessionConfig, SessionId, SessionTitleFinalSource, SessionTitleState};
+use lpa_core::{
+    EligibilitySelector, SessionConfig, SessionId, SessionTitleFinalSource, SessionTitleState,
+    run_llm_compaction,
+};
 use lpa_safety::{SandboxMode, SandboxPolicyRecord, legacy_permissions::PermissionMode};
 
 use crate::{
-    ConnectionState, ProtocolErrorCode, ServerEvent, SessionEventPayload, SessionForkParams,
+    ConnectionState, ProtocolErrorCode, ServerEvent, SessionCompactParams, SessionCompactResult,
+    SessionContextClearParams, SessionContextClearResult, SessionEventPayload, SessionForkParams,
     SessionForkResult, SessionListParams, SessionListResult, SessionResumeParams,
     SessionResumeResult, SessionRuntimeStatus, SessionStartParams, SessionStartResult,
     SessionTitleUpdateParams, SessionTitleUpdateResult, SuccessResponse, execution::RuntimeSession,
@@ -473,6 +477,137 @@ impl ServerRuntime {
             },
         })
         .expect("serialize session/fork response")
+    }
+
+    /// Manually compact a session's context by summarizing its older turns,
+    /// mirroring the automatic compaction the query loop performs when the token
+    /// budget is exceeded.
+    pub(super) async fn handle_session_compact(
+        &self,
+        request_id: serde_json::Value,
+        params: serde_json::Value,
+    ) -> serde_json::Value {
+        let params: SessionCompactParams = match serde_json::from_value(params) {
+            Ok(params) => params,
+            Err(error) => {
+                return self.error_response(
+                    request_id,
+                    ProtocolErrorCode::InvalidParams,
+                    format!("invalid session/compact params: {error}"),
+                );
+            }
+        };
+        let Some(session_arc) = self.sessions.lock().await.get(&params.session_id).cloned() else {
+            return self.error_response(
+                request_id,
+                ProtocolErrorCode::SessionNotFound,
+                "session does not exist",
+            );
+        };
+
+        let mut session = session_arc.lock().await;
+        let model_slug = session
+            .summary
+            .resolved_model
+            .clone()
+            .unwrap_or_else(|| self.deps.default_model.clone());
+        let core_session = Arc::clone(&session.core_session);
+        let outcome = {
+            let mut core = core_session.lock().await;
+            run_llm_compaction(
+                &mut core,
+                Arc::clone(&self.deps.provider),
+                &model_slug,
+                &EligibilitySelector::default(),
+            )
+            .await
+        };
+
+        match outcome {
+            Ok(Some(outcome)) => {
+                session.summary.updated_at = Utc::now();
+                let summary = session.summary.clone();
+                serde_json::to_value(SuccessResponse {
+                    id: request_id,
+                    result: SessionCompactResult {
+                        session: summary,
+                        messages_removed: outcome.replaced_prefix_len,
+                        summary_chars: outcome.summary.summary_text.len(),
+                    },
+                })
+                .expect("serialize session/compact response")
+            }
+            Ok(None) => self.error_response(
+                request_id,
+                ProtocolErrorCode::InvalidParams,
+                "nothing eligible to compact yet",
+            ),
+            Err(error) => self.error_response(
+                request_id,
+                ProtocolErrorCode::InternalError,
+                format!("compaction failed: {error}"),
+            ),
+        }
+    }
+
+    /// Clear a session's conversation context while keeping the session itself
+    /// alive — the message history and accumulated token counts are reset so the
+    /// next prompt starts from an empty context window.
+    pub(super) async fn handle_session_context_clear(
+        &self,
+        request_id: serde_json::Value,
+        params: serde_json::Value,
+    ) -> serde_json::Value {
+        let params: SessionContextClearParams = match serde_json::from_value(params) {
+            Ok(params) => params,
+            Err(error) => {
+                return self.error_response(
+                    request_id,
+                    ProtocolErrorCode::InvalidParams,
+                    format!("invalid session/context/clear params: {error}"),
+                );
+            }
+        };
+        let Some(session_arc) = self.sessions.lock().await.get(&params.session_id).cloned() else {
+            return self.error_response(
+                request_id,
+                ProtocolErrorCode::SessionNotFound,
+                "session does not exist",
+            );
+        };
+
+        let mut session = session_arc.lock().await;
+        let core_session = Arc::clone(&session.core_session);
+        let messages_removed = {
+            let mut core = core_session.lock().await;
+            let removed = core.messages.len();
+            core.messages.clear();
+            core.turn_count = 0;
+            core.total_input_tokens = 0;
+            core.total_output_tokens = 0;
+            core.total_cache_creation_tokens = 0;
+            core.total_cache_read_tokens = 0;
+            core.last_input_tokens = 0;
+            core.active_compaction = None;
+            removed
+        };
+
+        session.history_items.clear();
+        session.summary.total_input_tokens = 0;
+        session.summary.total_output_tokens = 0;
+        session.summary.updated_at = Utc::now();
+        let summary = session.summary.clone();
+
+        tracing::info!(session_id = %params.session_id, messages_removed, "cleared session context");
+
+        serde_json::to_value(SuccessResponse {
+            id: request_id,
+            result: SessionContextClearResult {
+                session: summary,
+                messages_removed,
+            },
+        })
+        .expect("serialize session/context/clear response")
     }
 }
 

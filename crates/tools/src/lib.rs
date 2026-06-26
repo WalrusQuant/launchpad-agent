@@ -5,6 +5,7 @@ mod file_write;
 mod glob;
 mod grep;
 mod invalid;
+mod ls;
 mod mcp_adapter;
 mod orchestrator;
 mod plan;
@@ -26,6 +27,7 @@ pub use file_write::FileWriteTool;
 pub use glob::GlobTool;
 pub use grep::GrepTool;
 pub use invalid::InvalidTool;
+pub use ls::LsTool;
 pub use mcp_adapter::{
     MCP_TOOL_PREFIX, McpToolAdapter, flatten_call_tool_result, register_mcp_tools,
 };
@@ -53,6 +55,7 @@ pub fn register_builtin_tools(registry: &mut ToolRegistry) {
     registry.register(Arc::new(FileWriteTool));
     registry.register(Arc::new(GlobTool));
     registry.register(Arc::new(GrepTool));
+    registry.register(Arc::new(LsTool));
     registry.register(Arc::new(InvalidTool));
     registry.register(Arc::new(QuestionTool));
     registry.register(Arc::new(TodoWriteTool));
@@ -78,6 +81,7 @@ mod tests {
             "write",
             "glob",
             "grep",
+            "ls",
             "invalid",
             "question",
             "todowrite",
@@ -136,6 +140,7 @@ mod tests {
             "write",
             "glob",
             "grep",
+            "ls",
             "invalid",
             "question",
             "todowrite",

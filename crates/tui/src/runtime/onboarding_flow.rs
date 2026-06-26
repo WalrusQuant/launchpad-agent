@@ -239,6 +239,8 @@ impl TuiApp {
 
             // Legacy flow — model was captured earlier; validate now.
             self.begin_onboarding_validation()
+        } else if let Some(note) = prompt.trim_start().strip_prefix('#') {
+            self.append_memory_line(note)
         } else if prompt.trim_start().starts_with('/') {
             self.handle_slash_command(prompt)
         } else {
@@ -261,6 +263,54 @@ impl TuiApp {
             self.onboarding_selected_base_url.clone(),
             self.onboarding_selected_api_key.clone(),
         )?;
+        Ok(())
+    }
+
+    /// Append a `#`-prefixed note as a bullet to the project memory file.
+    ///
+    /// Prefers an existing `AGENTS.md`, then `CLAUDE.md`, and otherwise creates
+    /// `AGENTS.md` in the working directory. Mirrors Claude Code's `#` shortcut
+    /// for jotting a durable instruction without leaving the composer.
+    pub(crate) fn append_memory_line(&mut self, note: &str) -> Result<()> {
+        let note = note.trim();
+        if note.is_empty() {
+            self.status_message = "Nothing to add to memory".to_string();
+            return Ok(());
+        }
+
+        self.emit_inline_command_echo(&format!("# {note}"));
+
+        let target = ["AGENTS.md", "CLAUDE.md"]
+            .into_iter()
+            .map(|name| self.cwd.join(name))
+            .find(|path| path.exists())
+            .unwrap_or_else(|| self.cwd.join("AGENTS.md"));
+
+        use std::io::Write as _;
+        let result = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&target)
+            .and_then(|mut file| writeln!(file, "- {note}"));
+
+        match result {
+            Ok(()) => {
+                self.push_item(
+                    TranscriptItemKind::System,
+                    "Memory",
+                    format!("Added to {}: {note}", target.display()),
+                );
+                self.status_message = "Memory note added".to_string();
+            }
+            Err(error) => {
+                self.push_item(
+                    TranscriptItemKind::Error,
+                    "Memory",
+                    format!("Failed to update {}: {error}", target.display()),
+                );
+                self.status_message = "Failed to add memory note".to_string();
+            }
+        }
         Ok(())
     }
 

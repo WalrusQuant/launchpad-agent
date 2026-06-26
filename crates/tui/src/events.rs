@@ -157,6 +157,18 @@ pub(crate) enum WorkerEvent {
     },
     /// The interactive client cleared its active session and is waiting for the next prompt.
     NewSessionPrepared,
+    /// The active session's context was manually compacted into a summary.
+    ContextCompacted {
+        /// Number of prior messages replaced by the summary.
+        messages_removed: usize,
+        /// Character length of the generated summary.
+        summary_chars: usize,
+    },
+    /// The active session's context was cleared while keeping the session alive.
+    ContextCleared {
+        /// Number of messages dropped from the context.
+        messages_removed: usize,
+    },
     /// The active session changed.
     SessionSwitched {
         /// The new active session identifier.

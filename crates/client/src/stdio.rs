@@ -12,11 +12,13 @@ use anyhow::{Context, Result};
 use lpa_protocol::{
     ApprovalRespondParams, ApprovalRespondResult, ClientNotification, ClientRequest,
     ClientTransportKind, ErrorResponse, InitializeParams, InitializeResult, NotificationEnvelope,
-    ProtocolErrorCode, ServerEvent, SessionForkParams, SessionForkResult, SessionListParams,
-    SessionListResult, SessionResumeParams, SessionResumeResult, SessionStartParams,
-    SessionStartResult, SessionTitleUpdateParams, SessionTitleUpdateResult, SkillChangedParams,
-    SkillChangedResult, SkillListParams, SkillListResult, SuccessResponse, TurnInterruptParams,
-    TurnInterruptResult, TurnStartParams, TurnStartResult, TurnSteerParams, TurnSteerResult,
+    ProtocolErrorCode, ServerEvent, SessionCompactParams, SessionCompactResult,
+    SessionContextClearParams, SessionContextClearResult, SessionForkParams, SessionForkResult,
+    SessionListParams, SessionListResult, SessionResumeParams, SessionResumeResult,
+    SessionStartParams, SessionStartResult, SessionTitleUpdateParams, SessionTitleUpdateResult,
+    SkillChangedParams, SkillChangedResult, SkillListParams, SkillListResult, SuccessResponse,
+    TurnInterruptParams, TurnInterruptResult, TurnStartParams, TurnStartResult, TurnSteerParams,
+    TurnSteerResult,
 };
 use serde::de::DeserializeOwned;
 use tokio::{
@@ -148,6 +150,20 @@ impl StdioServerClient {
 
     pub async fn session_fork(&mut self, params: SessionForkParams) -> Result<SessionForkResult> {
         self.request("session/fork", params).await
+    }
+
+    pub async fn session_compact(
+        &mut self,
+        params: SessionCompactParams,
+    ) -> Result<SessionCompactResult> {
+        self.request("session/compact", params).await
+    }
+
+    pub async fn session_context_clear(
+        &mut self,
+        params: SessionContextClearParams,
+    ) -> Result<SessionContextClearResult> {
+        self.request("session/context/clear", params).await
     }
 
     pub async fn skills_list(&mut self, params: SkillListParams) -> Result<SkillListResult> {
