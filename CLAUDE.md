@@ -35,12 +35,12 @@ No justfile / Makefile. Use cargo directly:
 
 ```bash
 cargo build --release
-cargo test --workspace      # 421 tests currently passing
+cargo test --workspace      # 463 tests currently passing
 cargo run -- onboard        # TUI configure flow (alias: the app launches straight into it on first run)
 cargo run -- prompt "..."   # Single-shot completion
 ```
 
-Rust 1.85+. All 421 tests currently pass — keep it that way.
+Rust 1.85+. All 463 tests currently pass — keep it that way.
 
 ## Config & env
 
