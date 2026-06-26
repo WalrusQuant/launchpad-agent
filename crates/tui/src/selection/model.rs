@@ -28,9 +28,9 @@ impl TuiApp {
 
         if let Some(saved) = self.saved_model_entry(&self.model)
             && let Some(base_url) = saved.base_url.as_deref()
-            && let Some(preset) = lpa_core::all_presets().iter().find(|p| {
-                p.default_base_url == Some(base_url) && p.wire_api == saved.wire_api
-            })
+            && let Some(preset) = lpa_core::all_presets()
+                .iter()
+                .find(|p| p.default_base_url == Some(base_url) && p.wire_api == saved.wire_api)
         {
             return Some(preset.id.to_string());
         }

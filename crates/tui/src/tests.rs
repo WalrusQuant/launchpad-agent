@@ -487,7 +487,10 @@ async fn configure_openrouter_full_flow_reaches_validation() {
 
     // No saved key yet → the flow asks for the API key once.
     assert!(app.onboarding_api_key_pending);
-    assert_eq!(app.onboarding_selected_model.as_deref(), Some("z-ai/glm-4.6"));
+    assert_eq!(
+        app.onboarding_selected_model.as_deref(),
+        Some("z-ai/glm-4.6")
+    );
 
     // Entering the key triggers validation (which fails in the harness; we only
     // care that the model + key were captured and validation was attempted).
