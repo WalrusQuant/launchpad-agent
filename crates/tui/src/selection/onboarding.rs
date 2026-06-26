@@ -215,7 +215,9 @@ impl TuiApp {
             self.onboarding_selected_api_key = self.existing_api_key_for_preset(preset);
         }
 
-        let needs_key = preset.map(|p| !p.api_key_env_vars.is_empty()).unwrap_or(true);
+        let needs_key = preset
+            .map(|p| !p.api_key_env_vars.is_empty())
+            .unwrap_or(true);
         if self.onboarding_selected_api_key.is_some() || !needs_key {
             self.onboarding_api_key_pending = false;
             self.onboarding_prompt = None;
@@ -245,7 +247,10 @@ impl TuiApp {
         self.onboarding_custom_model_pending = true;
         self.onboarding_selected_model = None;
         self.onboarding_selected_model_is_custom = true;
-        let hint = self.current_preset().map(|p| p.slug_hint).unwrap_or("model slug");
+        let hint = self
+            .current_preset()
+            .map(|p| p.slug_hint)
+            .unwrap_or("model slug");
         self.onboarding_prompt = Some(format!("model slug — {hint}"));
         self.input.clear();
         self.status_message = "Enter a model slug".to_string();

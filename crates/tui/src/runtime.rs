@@ -635,7 +635,9 @@ impl TuiApp {
         self.input.clear();
         let preset = self.current_preset();
         let label = preset.map(|p| p.display_name).unwrap_or("provider");
-        let needs_key = preset.map(|p| !p.api_key_env_vars.is_empty()).unwrap_or(true);
+        let needs_key = preset
+            .map(|p| !p.api_key_env_vars.is_empty())
+            .unwrap_or(true);
 
         if needs_key {
             self.onboarding_selected_api_key = None;
