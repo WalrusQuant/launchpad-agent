@@ -2,10 +2,25 @@
 //!
 //! Each preset bundles the non-negotiable knobs needed to connect to one
 //! provider family: the wire API, the default base URL (if any), and the
-//! environment variable names we'll look for as a fallback. The actual
-//! model list is NOT baked in — users type their own model slug in v1.
+//! environment variable names we'll look for as a fallback. Each preset also
+//! ships a curated `models` list so the picker can offer real, selectable model
+//! slugs instead of asking the user to type one blind. A `slug_hint` gives a
+//! format example for the always-available "Custom model…" escape hatch.
 
 use crate::ProviderWireApi;
+
+mod catalog;
+
+/// One selectable model bundled with a provider preset.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PresetModel {
+    /// The exact slug sent to the provider on the wire.
+    pub slug: &'static str,
+    /// Human-readable label shown in the model picker.
+    pub display_name: &'static str,
+    /// Short one-line description rendered beneath the label.
+    pub description: &'static str,
+}
 
 /// One curated provider entry shown in the `/configure` provider picker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,115 +42,30 @@ pub struct ProviderPreset {
     /// Suggested default model slug, pre-selected when the user picks this
     /// preset in onboarding. `None` for `custom` (the user must type one).
     pub default_model: Option<&'static str>,
+    /// Curated, selectable models for this provider. May be empty for
+    /// `custom`, where the user always types a slug.
+    pub models: &'static [PresetModel],
+    /// Format example shown when the user opts to type a custom slug, e.g.
+    /// `vendor/model — anthropic/claude-3.5-sonnet`.
+    pub slug_hint: &'static str,
+}
+
+impl ProviderPreset {
+    /// Returns the curated default model, falling back to the first entry in
+    /// the curated `models` list when no explicit default is declared.
+    pub fn preferred_model(&self) -> Option<&'static str> {
+        self.default_model
+            .or_else(|| self.models.first().map(|model| model.slug))
+    }
 }
 
 /// Returns every preset in display order.
 ///
 /// First-party providers come first, OpenAI-compatible aggregators follow,
-/// and `Custom` sits at the bottom as an escape hatch.
+/// local runtimes after that, and `Custom` sits at the bottom as an escape
+/// hatch.
 pub fn all_presets() -> &'static [ProviderPreset] {
-    &[
-        ProviderPreset {
-            id: "anthropic",
-            display_name: "Anthropic (Claude)",
-            wire_api: ProviderWireApi::AnthropicMessages,
-            default_base_url: Some("https://api.anthropic.com"),
-            api_key_env_vars: &["ANTHROPIC_API_KEY", "LPA_API_KEY"],
-            description: "Claude models — Sonnet, Opus, Haiku",
-            is_custom: false,
-            default_model: Some("claude-opus-4-8"),
-        },
-        ProviderPreset {
-            id: "openai",
-            display_name: "OpenAI",
-            wire_api: ProviderWireApi::OpenAIChatCompletions,
-            default_base_url: Some("https://api.openai.com"),
-            api_key_env_vars: &["OPENAI_API_KEY", "LPA_API_KEY"],
-            description: "GPT models — gpt-4o, gpt-5, o1 family",
-            is_custom: false,
-            default_model: Some("gpt-4o"),
-        },
-        ProviderPreset {
-            id: "google",
-            display_name: "Google Gemini",
-            wire_api: ProviderWireApi::GoogleGenerateContent,
-            default_base_url: Some("https://generativelanguage.googleapis.com"),
-            api_key_env_vars: &["GOOGLE_API_KEY", "GEMINI_API_KEY", "LPA_API_KEY"],
-            description: "Gemini models — 2.5 Pro, 2.5 Flash",
-            is_custom: false,
-            default_model: Some("gemini-2.5-pro"),
-        },
-        ProviderPreset {
-            id: "openrouter",
-            display_name: "OpenRouter",
-            wire_api: ProviderWireApi::OpenAIChatCompletions,
-            default_base_url: Some("https://openrouter.ai/api/v1"),
-            api_key_env_vars: &["OPENROUTER_API_KEY", "LPA_API_KEY"],
-            description: "Unified gateway — free + paid models from many vendors",
-            is_custom: false,
-            default_model: Some("z-ai/glm-4.6"),
-        },
-        ProviderPreset {
-            id: "groq",
-            display_name: "Groq",
-            wire_api: ProviderWireApi::OpenAIChatCompletions,
-            default_base_url: Some("https://api.groq.com/openai/v1"),
-            api_key_env_vars: &["GROQ_API_KEY", "LPA_API_KEY"],
-            description: "Very fast inference — Llama, Mixtral, Gemma, Qwen",
-            is_custom: false,
-            default_model: Some("llama-3.3-70b-versatile"),
-        },
-        ProviderPreset {
-            id: "together",
-            display_name: "Together AI",
-            wire_api: ProviderWireApi::OpenAIChatCompletions,
-            default_base_url: Some("https://api.together.xyz/v1"),
-            api_key_env_vars: &["TOGETHER_API_KEY", "LPA_API_KEY"],
-            description: "Open-weight models at scale — Llama, Qwen, DeepSeek",
-            is_custom: false,
-            default_model: Some("meta-llama/Llama-3.3-70B-Instruct-Turbo"),
-        },
-        ProviderPreset {
-            id: "mistral",
-            display_name: "Mistral",
-            wire_api: ProviderWireApi::OpenAIChatCompletions,
-            default_base_url: Some("https://api.mistral.ai/v1"),
-            api_key_env_vars: &["MISTRAL_API_KEY", "LPA_API_KEY"],
-            description: "Mistral models — Large, Medium, Codestral",
-            is_custom: false,
-            default_model: Some("mistral-large-latest"),
-        },
-        ProviderPreset {
-            id: "zai_coding",
-            display_name: "Z.ai (coding plan)",
-            wire_api: ProviderWireApi::OpenAIChatCompletions,
-            default_base_url: Some("https://api.z.ai/api/coding/paas/v4"),
-            api_key_env_vars: &["Z_AI_API_KEY", "LPA_API_KEY"],
-            description: "Z.ai coding plan — GLM family (glm-5.2 flagship)",
-            is_custom: false,
-            default_model: Some("glm-5.2"),
-        },
-        ProviderPreset {
-            id: "ollama",
-            display_name: "Ollama (local)",
-            wire_api: ProviderWireApi::OpenAIChatCompletions,
-            default_base_url: Some("http://localhost:11434/v1"),
-            api_key_env_vars: &[],
-            description: "Run models locally — no API key needed",
-            is_custom: false,
-            default_model: Some("llama3.2"),
-        },
-        ProviderPreset {
-            id: "custom",
-            display_name: "Custom endpoint",
-            wire_api: ProviderWireApi::OpenAIChatCompletions,
-            default_base_url: None,
-            api_key_env_vars: &["LPA_API_KEY"],
-            description: "Any OpenAI-compatible endpoint",
-            is_custom: true,
-            default_model: None,
-        },
-    ]
+    catalog::PRESETS
 }
 
 /// Looks up a preset by its stable id.
@@ -161,8 +91,23 @@ mod tests {
                 "groq",
                 "together",
                 "mistral",
+                "deepseek",
+                "xai",
+                "fireworks",
+                "cerebras",
+                "perplexity",
+                "moonshot",
+                "deepinfra",
+                "nebius",
+                "hyperbolic",
+                "novita",
+                "sambanova",
+                "lambda",
+                "nvidia",
+                "github",
                 "zai_coding",
                 "ollama",
+                "lmstudio",
                 "custom",
             ]
         );
@@ -183,6 +128,37 @@ mod tests {
     }
 
     #[test]
+    fn every_non_custom_preset_offers_a_selectable_model_list() {
+        for preset in all_presets() {
+            if preset.is_custom {
+                continue;
+            }
+            assert!(
+                !preset.models.is_empty(),
+                "preset {} should offer a curated model list",
+                preset.id
+            );
+        }
+    }
+
+    #[test]
+    fn every_preset_provides_a_slug_hint() {
+        for preset in all_presets() {
+            assert!(
+                !preset.slug_hint.trim().is_empty(),
+                "preset {} should provide a slug hint",
+                preset.id
+            );
+        }
+    }
+
+    #[test]
+    fn preferred_model_falls_back_to_first_curated_model() {
+        let preset = preset_by_id("deepseek").expect("deepseek preset");
+        assert_eq!(preset.preferred_model(), Some("deepseek-chat"));
+    }
+
+    #[test]
     fn zai_coding_preset_targets_glm_on_zai_endpoint() {
         let preset = preset_by_id("zai_coding").expect("zai_coding preset");
         assert_eq!(
@@ -198,6 +174,7 @@ mod tests {
     fn custom_preset_has_no_default_model() {
         let preset = preset_by_id("custom").expect("custom preset");
         assert!(preset.default_model.is_none());
+        assert!(preset.models.is_empty());
     }
 
     #[test]
@@ -224,6 +201,13 @@ mod tests {
         let preset = preset_by_id("ollama").expect("ollama preset");
         assert!(preset.api_key_env_vars.is_empty());
         assert!(preset.default_base_url.unwrap().starts_with("http://"));
+    }
+
+    #[test]
+    fn newly_added_providers_are_present() {
+        for id in ["deepseek", "xai", "fireworks", "cerebras", "perplexity"] {
+            assert!(preset_by_id(id).is_some(), "expected preset {id}");
+        }
     }
 
     #[test]

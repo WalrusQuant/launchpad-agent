@@ -25,6 +25,21 @@ fn isolate_test_home() {
     lpa_utils::override_lpa_home(dir);
 }
 
+/// Points the open `ModelList` aux panel at the row with the given slug.
+fn select_model_row(app: &mut TuiApp, slug: &str) {
+    let index = app
+        .aux_panel
+        .as_ref()
+        .and_then(|panel| match &panel.content {
+            AuxPanelContent::ModelList(entries) => {
+                entries.iter().position(|entry| entry.slug == slug)
+            }
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("model row {slug:?} not found in panel"));
+    app.aux_panel_selection = index;
+}
+
 fn test_app() -> TuiApp {
     isolate_test_home();
     TuiApp {
@@ -444,7 +459,7 @@ async fn slash_onboard_alias_still_starts_flow() {
 }
 
 #[tokio::test]
-async fn configure_openrouter_preset_jumps_to_api_key_prompt() {
+async fn configure_openrouter_preset_opens_model_picker() {
     let mut app = test_app();
     app.handle_slash_command("/configure".to_string()).unwrap();
     app.handle_preset_selected("openrouter");
@@ -454,14 +469,10 @@ async fn configure_openrouter_preset_jumps_to_api_key_prompt() {
         app.onboarding_selected_base_url.as_deref(),
         Some("https://openrouter.ai/api/v1")
     );
-    assert!(app.onboarding_api_key_pending);
+    // The new flow shows a curated model list before asking for anything.
+    assert!(app.is_onboarding_model_picker_open());
+    assert!(!app.onboarding_api_key_pending);
     assert!(!app.onboarding_base_url_pending);
-    assert!(
-        app.onboarding_prompt
-            .as_deref()
-            .unwrap_or("")
-            .contains("OpenRouter")
-    );
 }
 
 #[tokio::test]
@@ -470,40 +481,114 @@ async fn configure_openrouter_full_flow_reaches_validation() {
     app.handle_slash_command("/configure".to_string()).unwrap();
     app.handle_preset_selected("openrouter");
 
-    // Enter the API key.
-    app.handle_submission("sk-or-v1-testkey".to_string())
-        .unwrap();
-    assert!(!app.onboarding_api_key_pending);
-    assert!(app.onboarding_custom_model_pending);
+    // Pick a curated model from the list.
+    select_model_row(&mut app, "z-ai/glm-4.6");
+    app.try_accept_aux_panel_selection();
+
+    // No saved key yet → the flow asks for the API key once.
+    assert!(app.onboarding_api_key_pending);
+    assert_eq!(app.onboarding_selected_model.as_deref(), Some("z-ai/glm-4.6"));
+
+    // Entering the key triggers validation (which fails in the harness; we only
+    // care that the model + key were captured and validation was attempted).
+    let result = app.handle_submission("sk-or-v1-testkey".to_string());
+    assert!(result.is_ok());
     assert_eq!(
         app.onboarding_selected_api_key.as_deref(),
         Some("sk-or-v1-testkey")
     );
+    assert!(!app.onboarding_api_key_pending);
+}
 
-    // Enter the model slug. This should trigger validation (which will fail
-    // in the test harness, but we just care that validation was attempted).
-    let result = app.handle_submission("meta-llama/llama-3.3-70b-instruct:free".to_string());
-    assert!(result.is_ok());
-    assert_eq!(
-        app.onboarding_selected_model.as_deref(),
-        Some("meta-llama/llama-3.3-70b-instruct:free")
+#[tokio::test]
+async fn configure_openrouter_custom_model_row_shows_slug_hint() {
+    let mut app = test_app();
+    app.handle_slash_command("/configure".to_string()).unwrap();
+    app.handle_preset_selected("openrouter");
+
+    select_model_row(&mut app, "__custom__");
+    app.try_accept_aux_panel_selection();
+
+    assert!(app.onboarding_custom_model_pending);
+    let prompt = app.onboarding_prompt.as_deref().unwrap_or("");
+    assert!(
+        prompt.contains("anthropic/claude-3.5-sonnet"),
+        "expected slug hint in prompt, got {prompt:?}"
     );
 }
 
 #[tokio::test]
-async fn configure_ollama_preset_skips_api_key_prompt() {
+async fn configure_ollama_preset_picks_model_without_api_key() {
     let mut app = test_app();
     app.handle_slash_command("/configure".to_string()).unwrap();
     app.handle_preset_selected("ollama");
 
-    // Ollama has no API key — should jump straight to model entry.
+    // Ollama ships a curated model list and needs no key.
+    assert!(app.is_onboarding_model_picker_open());
     assert!(!app.onboarding_api_key_pending);
-    assert!(!app.onboarding_base_url_pending);
-    assert!(app.onboarding_custom_model_pending);
     assert_eq!(
         app.onboarding_selected_base_url.as_deref(),
         Some("http://localhost:11434/v1")
     );
+
+    // Selecting a model validates directly — no API key prompt.
+    select_model_row(&mut app, "llama3.2");
+    app.try_accept_aux_panel_selection();
+    assert!(!app.onboarding_api_key_pending);
+    assert_eq!(app.onboarding_selected_model.as_deref(), Some("llama3.2"));
+}
+
+#[tokio::test]
+async fn configure_reuses_saved_api_key_for_provider() {
+    let mut app = test_app();
+    app.saved_models = vec![SavedModelEntry {
+        model: "z-ai/glm-4.6".to_string(),
+        provider: ProviderFamily::openai(),
+        wire_api: lpa_core::ProviderWireApi::OpenAIChatCompletions,
+        base_url: Some("https://openrouter.ai/api/v1".to_string()),
+        api_key: Some("sk-or-saved".to_string()),
+    }];
+    app.handle_slash_command("/configure".to_string()).unwrap();
+    app.handle_preset_selected("openrouter");
+
+    // Pick a *different* model for the same provider — the saved key is reused,
+    // so no API key prompt appears.
+    select_model_row(&mut app, "openai/gpt-4o");
+    app.try_accept_aux_panel_selection();
+
+    assert!(!app.onboarding_api_key_pending);
+    assert_eq!(
+        app.onboarding_selected_api_key.as_deref(),
+        Some("sk-or-saved")
+    );
+    assert_eq!(
+        app.onboarding_selected_model.as_deref(),
+        Some("openai/gpt-4o")
+    );
+}
+
+#[tokio::test]
+async fn configure_does_not_reuse_key_from_a_different_provider() {
+    let mut app = test_app();
+    // A saved key whose base URL is a *prefix* of another provider's URL must
+    // not be lent out — identity is the exact base URL + wire API.
+    app.saved_models = vec![SavedModelEntry {
+        model: "some-model".to_string(),
+        provider: ProviderFamily::openai(),
+        wire_api: lpa_core::ProviderWireApi::OpenAIChatCompletions,
+        base_url: Some("https://api.x.ai".to_string()),
+        api_key: Some("sk-other".to_string()),
+    }];
+    app.handle_slash_command("/configure".to_string()).unwrap();
+    // xAI's real base URL is https://api.x.ai/v1 — the saved https://api.x.ai
+    // is a prefix but not an exact match, so it must be ignored.
+    app.handle_preset_selected("xai");
+    select_model_row(&mut app, "grok-4");
+    app.try_accept_aux_panel_selection();
+
+    // No matching saved key → the flow asks for one instead of reusing.
+    assert!(app.onboarding_api_key_pending);
+    assert_eq!(app.onboarding_selected_api_key, None);
 }
 
 #[tokio::test]
@@ -1064,11 +1149,33 @@ async fn validation_skip_pushes_save_without_probe_notice() {
 }
 
 #[tokio::test]
-async fn validation_change_reprompts_for_model_in_preset_flow() {
+async fn validation_change_reprompts_for_api_key_for_keyed_provider() {
     let mut app = test_app();
     app.onboarding_preset_id = Some("openrouter".to_string());
+    app.onboarding_selected_model = Some("z-ai/glm-4.6".to_string());
+    app.onboarding_selected_api_key = Some("sk-bad".to_string());
+
+    app.handle_worker_event(WorkerEvent::ProviderValidationFailed {
+        message: "invalid api key".to_string(),
+    });
+
+    app.change_validation_inputs();
+
+    assert!(app.pending_validation_retry.is_none());
+    // A bad/expired key is the usual cause — re-prompt for the key, keep the model.
+    assert!(app.onboarding_api_key_pending);
+    assert!(app.onboarding_selected_api_key.is_none());
+    assert_eq!(
+        app.onboarding_selected_model.as_deref(),
+        Some("z-ai/glm-4.6")
+    );
+}
+
+#[tokio::test]
+async fn validation_change_reprompts_for_model_for_keyless_provider() {
+    let mut app = test_app();
+    app.onboarding_preset_id = Some("ollama".to_string());
     app.onboarding_selected_model = Some("bad-slug".to_string());
-    app.onboarding_selected_api_key = Some("sk-test".to_string());
 
     app.handle_worker_event(WorkerEvent::ProviderValidationFailed {
         message: "unknown model".to_string(),
@@ -1077,10 +1184,9 @@ async fn validation_change_reprompts_for_model_in_preset_flow() {
     app.change_validation_inputs();
 
     assert!(app.pending_validation_retry.is_none());
+    // Keyless provider (local runtime) → re-ask for the model slug instead.
     assert!(app.onboarding_custom_model_pending);
     assert!(app.onboarding_selected_model.is_none());
-    // The API key is still the likely-good part — don't make the user retype it.
-    assert_eq!(app.onboarding_selected_api_key.as_deref(), Some("sk-test"));
 }
 
 #[tokio::test]

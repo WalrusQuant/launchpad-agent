@@ -21,15 +21,15 @@ impl TuiApp {
     ///
     /// Matches the saved base URL against every preset so OpenAI-compatible
     /// aggregators (OpenRouter, Groq, Together, Mistral, Ollama) don't all
-    /// collapse into the generic "OpenAI" label.
+    /// collapse into the generic "OpenAI" label. The match is exact, so presets
+    /// whose base URLs share a prefix can't be confused for one another.
     pub(crate) fn active_preset_id(&self) -> Option<String> {
         use lpa_protocol::ProviderFamily;
 
         if let Some(saved) = self.saved_model_entry(&self.model)
             && let Some(base_url) = saved.base_url.as_deref()
             && let Some(preset) = lpa_core::all_presets().iter().find(|p| {
-                p.default_base_url
-                    .is_some_and(|default| base_url.starts_with(default))
+                p.default_base_url == Some(base_url) && p.wire_api == saved.wire_api
             })
         {
             return Some(preset.id.to_string());
@@ -138,6 +138,42 @@ impl TuiApp {
         entries
     }
 
+    /// Builds the model picker rows for the preset chosen in onboarding: one row
+    /// per curated model plus a trailing "Custom model…" escape hatch.
+    pub(crate) fn preset_model_picker_entries(&self) -> Vec<ModelListEntry> {
+        let mut entries = Vec::new();
+
+        if let Some(preset) = self.current_preset() {
+            for model in preset.models {
+                entries.push(ModelListEntry {
+                    slug: model.slug.to_string(),
+                    display_name: model.display_name.to_string(),
+                    provider: self.provider,
+                    description: Some(model.description.to_string()),
+                    is_current: model.slug == self.model,
+                    is_builtin: true,
+                    is_custom_mode: false,
+                });
+            }
+        }
+
+        entries.push(self.custom_model_row());
+        entries
+    }
+
+    /// The trailing "Custom model…" row shared by the onboarding model pickers.
+    pub(crate) fn custom_model_row(&self) -> ModelListEntry {
+        ModelListEntry {
+            slug: "__custom__".to_string(),
+            display_name: "Custom model…".to_string(),
+            provider: self.provider,
+            description: Some("enter a model slug manually".to_string()),
+            is_current: false,
+            is_builtin: false,
+            is_custom_mode: true,
+        }
+    }
+
     pub(crate) fn onboarding_model_picker_entries(&self) -> Vec<ModelListEntry> {
         let mut entries = Vec::new();
 
@@ -169,15 +205,7 @@ impl TuiApp {
         }
 
         if self.show_model_onboarding {
-            entries.push(ModelListEntry {
-                slug: "__custom__".to_string(),
-                display_name: "Custom model".to_string(),
-                provider: self.provider,
-                description: Some("enter a model name manually".to_string()),
-                is_current: false,
-                is_builtin: false,
-                is_custom_mode: true,
-            });
+            entries.push(self.custom_model_row());
         }
 
         if entries.is_empty() {

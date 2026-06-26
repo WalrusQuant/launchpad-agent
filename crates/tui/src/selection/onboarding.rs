@@ -65,15 +65,26 @@ impl TuiApp {
         self.input.clear();
     }
 
-    fn existing_api_key_for_preset(&self, preset_base_url: Option<&str>) -> Option<String> {
-        let preset_base_url = preset_base_url?;
+    /// The provider preset chosen during onboarding, if any.
+    pub(crate) fn current_preset(&self) -> Option<&'static lpa_core::ProviderPreset> {
+        self.onboarding_preset_id
+            .as_deref()
+            .and_then(lpa_core::preset_by_id)
+    }
+
+    /// Finds a saved API key belonging to the same provider as `preset`.
+    ///
+    /// Identity is the preset's exact base URL paired with its wire API — not a
+    /// prefix — so providers whose base URLs share a prefix can never lend each
+    /// other a key. Returns `None` for presets without a default base URL (the
+    /// custom/BYO endpoint), since there is nothing to match against.
+    fn existing_api_key_for_preset(&self, preset: &lpa_core::ProviderPreset) -> Option<String> {
+        let preset_base_url = preset.default_base_url?;
         self.saved_models
             .iter()
             .find(|entry| {
-                entry
-                    .base_url
-                    .as_deref()
-                    .is_some_and(|url| url.starts_with(preset_base_url))
+                entry.wire_api == preset.wire_api
+                    && entry.base_url.as_deref() == Some(preset_base_url)
             })
             .and_then(|entry| entry.api_key.clone())
     }
@@ -149,74 +160,110 @@ impl TuiApp {
         };
         self.onboarding_preset_id = Some(preset.id.to_string());
         self.onboarding_selected_base_url = preset.default_base_url.map(str::to_string);
+        self.onboarding_selected_api_key = None;
+        self.onboarding_selected_model = None;
+        self.onboarding_custom_model_pending = false;
+        self.onboarding_base_url_pending = false;
+        self.onboarding_api_key_pending = false;
+        self.input.clear();
 
-        match preset.id {
-            "anthropic" | "openai" | "google" => {
-                self.provider = match preset.id {
-                    "anthropic" => lpa_protocol::ProviderFamily::anthropic(),
-                    "openai" => lpa_protocol::ProviderFamily::openai(),
-                    "google" => lpa_protocol::ProviderFamily::google(),
-                    _ => unreachable!(),
-                };
-                self.show_onboarding_model_panel();
-                self.onboarding_prompt = None;
-                self.status_message = format!("Selected {}", preset.display_name);
+        // The wire API dictates the provider family for every preset; first-party
+        // presets get their native family, OpenAI-compatible ones get OpenAI.
+        self.provider = match preset.wire_api {
+            lpa_core::ProviderWireApi::AnthropicMessages => {
+                lpa_protocol::ProviderFamily::anthropic()
             }
-            "custom" => {
-                self.aux_panel = None;
-                self.aux_panel_selection = 0;
-                self.onboarding_custom_model_pending = true;
-                self.onboarding_selected_model_is_custom = true;
-                self.onboarding_prompt = Some("model name".to_string());
-                self.status_message = format!("Selected {}", preset.display_name);
-                self.input.clear();
+            lpa_core::ProviderWireApi::GoogleGenerateContent => {
+                lpa_protocol::ProviderFamily::google()
             }
-            _ => {
-                self.aux_panel = None;
-                self.aux_panel_selection = 0;
-                self.onboarding_custom_model_pending = false;
-                self.onboarding_selected_model_is_custom = true;
-                self.provider = lpa_protocol::ProviderFamily::openai();
-                if preset.api_key_env_vars.is_empty() {
-                    self.onboarding_selected_api_key = None;
-                    self.onboarding_custom_model_pending = true;
-                    self.onboarding_prompt =
-                        Some(format!("model slug for {}", preset.display_name));
-                } else {
-                    self.onboarding_base_url_pending = false;
-                    self.onboarding_api_key_pending = true;
+            lpa_core::ProviderWireApi::OpenAIChatCompletions
+            | lpa_core::ProviderWireApi::OpenAIResponses => lpa_protocol::ProviderFamily::openai(),
+        };
 
-                    let existing_key = self.existing_api_key_for_preset(preset.default_base_url);
-                    self.onboarding_selected_api_key = existing_key.clone();
-
-                    let env_var_hint = preset.api_key_env_vars.first();
-                    let prompt = match (existing_key.is_some(), env_var_hint) {
-                        (true, Some(var)) => format!(
-                            "{} API key — Enter to keep saved, or paste new (env: ${var})",
-                            preset.display_name
-                        ),
-                        (true, None) => format!(
-                            "{} API key — Enter to keep saved, or paste new",
-                            preset.display_name
-                        ),
-                        (false, Some(var)) => {
-                            format!("{} API key (also read from ${var})", preset.display_name)
-                        }
-                        (false, None) => format!("{} API key", preset.display_name),
-                    };
-                    self.onboarding_prompt = Some(prompt);
-                }
-                self.status_message = format!("Selected {}", preset.display_name);
-                self.input.clear();
-            }
+        if preset.is_custom {
+            // Bring-your-own endpoint: type a slug, then base URL + key.
+            self.onboarding_custom_model_pending = true;
+            self.onboarding_selected_model_is_custom = true;
+            self.onboarding_prompt = Some(format!("model name — {}", preset.slug_hint));
+            self.status_message = format!("Selected {}", preset.display_name);
+            return;
         }
+
+        // Every other provider ships a curated model list — show the picker.
+        self.onboarding_selected_model_is_custom = false;
+        self.onboarding_prompt = None;
+        self.show_preset_model_panel();
+        self.status_message = format!("Selected {} — choose a model", preset.display_name);
+    }
+
+    /// Advances onboarding once a model is known (picked from the curated list or
+    /// typed). Reuses a saved API key for the provider when one exists so the
+    /// user is not asked for it again; only prompts for a key the first time a
+    /// provider that needs one is configured.
+    pub(crate) fn proceed_with_preset_model(&mut self, model: String) -> Result<()> {
+        self.onboarding_selected_model = Some(model);
+        self.aux_panel = None;
+        self.aux_panel_selection = 0;
+        self.onboarding_custom_model_pending = false;
+        self.input.clear();
+
+        let preset = self.current_preset();
+
+        if self.onboarding_selected_api_key.is_none()
+            && let Some(preset) = preset
+        {
+            self.onboarding_selected_api_key = self.existing_api_key_for_preset(preset);
+        }
+
+        let needs_key = preset.map(|p| !p.api_key_env_vars.is_empty()).unwrap_or(true);
+        if self.onboarding_selected_api_key.is_some() || !needs_key {
+            self.onboarding_api_key_pending = false;
+            self.onboarding_prompt = None;
+            if self.onboarding_selected_api_key.is_some() {
+                let label = preset.map(|p| p.display_name).unwrap_or("provider");
+                self.status_message = format!("Reusing saved API key for {label}");
+            }
+            return self.begin_onboarding_validation();
+        }
+
+        // First time configuring this provider — ask for the key once.
+        self.onboarding_api_key_pending = true;
+        let label = preset.map(|p| p.display_name).unwrap_or("provider");
+        self.onboarding_prompt = Some(match preset.and_then(|p| p.api_key_env_vars.first()) {
+            Some(var) => format!("{label} API key (also read from ${var})"),
+            None => format!("{label} API key"),
+        });
+        self.status_message = format!("Enter your {label} API key");
+        Ok(())
+    }
+
+    /// Switches the preset model picker into manual-slug entry, keeping the
+    /// preset's base URL and showing its format example as a hint.
+    pub(crate) fn begin_preset_custom_model(&mut self) {
+        self.aux_panel = None;
+        self.aux_panel_selection = 0;
+        self.onboarding_custom_model_pending = true;
+        self.onboarding_selected_model = None;
+        self.onboarding_selected_model_is_custom = true;
+        let hint = self.current_preset().map(|p| p.slug_hint).unwrap_or("model slug");
+        self.onboarding_prompt = Some(format!("model slug — {hint}"));
+        self.input.clear();
+        self.status_message = "Enter a model slug".to_string();
     }
 
     pub(crate) fn handle_escape(&mut self) -> bool {
+        let preset_needs_model_list = self.current_preset().map(|p| !p.is_custom).unwrap_or(false);
+
         if self.onboarding_api_key_pending {
             self.onboarding_api_key_pending = false;
-            self.onboarding_prompt = Some("base url".to_string());
             self.input.clear();
+            if preset_needs_model_list {
+                self.onboarding_prompt = None;
+                self.show_preset_model_panel();
+            } else {
+                self.onboarding_base_url_pending = true;
+                self.onboarding_prompt = Some("base url".to_string());
+            }
             return true;
         }
         if self.onboarding_base_url_pending {
@@ -238,11 +285,24 @@ impl TuiApp {
             self.onboarding_selected_model_is_custom = false;
             self.onboarding_prompt = None;
             self.input.clear();
-            self.show_onboarding_model_panel();
+            if preset_needs_model_list {
+                self.show_preset_model_panel();
+            } else {
+                self.show_onboarding_model_panel();
+            }
             return true;
         }
         if self.is_onboarding_model_picker_open() {
-            self.exit_onboarding();
+            // From a preset's model list, step back to the provider picker;
+            // from the bare (no-preset) list, dismiss onboarding entirely.
+            if self.onboarding_preset_id.is_some() {
+                self.onboarding_preset_id = None;
+                self.onboarding_selected_base_url = None;
+                self.onboarding_selected_api_key = None;
+                self.show_configure_preset_panel();
+            } else {
+                self.exit_onboarding();
+            }
             return true;
         }
         false
