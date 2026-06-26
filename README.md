@@ -127,10 +127,21 @@ lpagent -p "summarize the build errors"      # prompt as an argument
 cat task.md | lpagent -p                      # or pipe it on stdin
 ```
 
+Every headless run persists a session, so you can chain them:
+
+```bash
+lpagent -p "draft a refactor plan"            # -> creates & persists a session
+lpagent -p -c "now apply step 1"              # -c/--continue: most recent session in this dir
+lpagent -p --resume <session-id> "and step 2" # resume a specific session by id
+lpagent -p --session-id <uuid> "..."          # run under a chosen id (resume it, or create it)
+```
+
 Flags (headless): `--model`, `--system-prompt` / `--append-system-prompt`,
 `--allowed-tools` / `--disallowed-tools` (comma-separated),
-`--dangerously-skip-permissions`, `--verbose` / `--debug`. Exit codes are
-`0` (success), `1` (failure), `2` (usage), so scripts can branch on the result.
+`--dangerously-skip-permissions`, `-r`/`--resume <id>`, `-c`/`--continue`,
+`--session-id <uuid>` (the three are mutually exclusive), `--verbose` / `--debug`.
+Exit codes are `0` (success), `1` (failure), `2` (usage), so scripts can branch
+on the result.
 
 ## What works today
 

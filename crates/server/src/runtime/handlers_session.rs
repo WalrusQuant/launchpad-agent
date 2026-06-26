@@ -80,7 +80,7 @@ impl ServerRuntime {
         };
 
         let now = Utc::now();
-        let session_id = SessionId::new();
+        let session_id = params.session_id.unwrap_or_default();
         let resolved_model = params
             .model
             .clone()

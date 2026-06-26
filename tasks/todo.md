@@ -1,14 +1,20 @@
 # CLI Resume Flags — `--continue` / `--resume` / `--session-id`
 
-**Status: Phase 1 SHIPPED (2026-06-26). Phase 2 (resume flags) is next.** Parity roadmap §1 + §16.
+**Status: Phases 1–3 SHIPPED (2026-06-26). Phase 4 (docs) mostly done; integration test pending.** Parity roadmap §1 + §16.
 
-Phase 1 routed all headless runs through the server (persisted) and — to avoid
-regressing the existing headless flags — folded in the de-risked Phase 3
-server-side env honoring. Verified end-to-end: full server round-trip
-(spawn → initialize → session/start → turn/start → event-drain → completion),
-rollout persisted (SessionMeta + Turn + Item lines), exit codes 0/1 correct,
-final assistant text captured from item events. 467 tests pass (was 463; +3
-tool-filter, +3 system-prompt, +2 csv-parse, −4 relocated from cli, +overlap).
+Phase 1 routed all headless runs through the server (persisted) and folded in
+the de-risked Phase 3 server-side env honoring. Phase 2 added the resume flags:
+`-r/--resume <id>`, `-c/--continue` (most-recent in cwd), `--session-id <uuid>`
+(resume-or-create), mutually exclusive via clap. The only protocol change was
+`session_id: Option<SessionId>` on `SessionStartParams`, honored by
+`handle_session_start`; the CLI checks `session/list` to decide resume-vs-create
+so no error-string matching is needed.
+
+Verified end-to-end with a fake provider: create → `--continue` → `--resume`
+all append to the SAME rollout (no clobber); unknown id → clean `session_not_found`
+exit 1; bad uuid → parse error exit 1; `-c --resume` conflict → clap usage exit 2;
+`--session-id` create persists under the chosen id. 474 tests pass (Phase 2 added
+7: 5 selector + 2 continue-selection).
 
 ## Goal
 
@@ -38,11 +44,11 @@ lpagent -p --session-id <uuid> "..."      # -> run under a caller-chosen id (res
 - [x] Map turn status → documented exit codes (0/1).
 
 ### Phase 2 — flag resolution
-- [ ] Add clap flags (global): `-r/--resume <SESSION_ID>`, `-c/--continue`, `--session-id <UUID>`; `conflicts_with` between the three.
-- [ ] `--resume <id>`: parse id → `session_resume`; clean error (exit 1) on unknown id.
-- [ ] `--continue`: `session_list` → filter `cwd == current_dir` → max `updated_at`; error (exit 1) if none.
-- [ ] `--session-id <uuid>`: add `session_id: Option<SessionId>` to `SessionStartParams` (protocol) + handler honors it (resume-or-create-with-id). Validate uuid.
-- [ ] No-flag path: `session_start` (persisted).
+- [x] Add clap flags (global): `-r/--resume <SESSION_ID>`, `-c/--continue`, `--session-id <UUID>`; `conflicts_with` between the three.
+- [x] `--resume <id>`: parse id → `session_resume`; clean error (exit 1) on unknown id.
+- [x] `--continue`: `session_list` → filter `cwd == current_dir` → max `updated_at`; error (exit 1) if none.
+- [x] `--session-id <uuid>`: add `session_id: Option<SessionId>` to `SessionStartParams` (protocol) + handler honors it (resume-or-create-with-id). Validate uuid.
+- [x] No-flag path: `session_start` (persisted).
 
 ### Phase 3 — flag parity through the server path (DE-RISKED 2026-06-26 — no protocol changes)
 
@@ -56,9 +62,9 @@ lpagent -p --session-id <uuid> "..."      # -> run under a caller-chosen id (res
 **Correctness caveat (documented, not a blocker):** env-based system-prompt/tool-filter overrides are *process-global*. That is exactly right for a single-tenant headless server, but would be wrong for a shared multi-session server. If these ever become per-session features (needed for subagents §6), they graduate to real protocol params then. Not needed now.
 
 ### Phase 4 — tests + docs
-- [ ] Unit: flag parsing, conflict rejection, `--continue` selection (most-recent-in-cwd), uuid validation.
+- [x] Unit: flag parsing, conflict rejection, `--continue` selection (most-recent-in-cwd), uuid validation.
 - [ ] Integration: `-p` start → persist → `-p --resume` round-trip shows continued context.
-- [ ] Docs: README headless section, `docs/parity-roadmap.md` (§1 `--continue`/`--resume`/`--session-id` ✅, §16 ✅), CLAUDE.md headless bullet, exit-code docs. Bump test count.
+- [x] Docs: README headless section, `docs/parity-roadmap.md` (§1 `--continue`/`--resume`/`--session-id` ✅, §16 ✅), CLAUDE.md headless bullet, exit-code docs. Bump test count.
 
 ## Open questions / risks
 - ~~Phase 3 flag plumbing~~ — **RESOLVED**: env-var-at-bootstrap, no protocol changes (see Phase 3).

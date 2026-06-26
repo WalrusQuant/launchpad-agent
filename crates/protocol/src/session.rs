@@ -37,6 +37,12 @@ pub struct SessionStartParams {
     pub ephemeral: bool,
     pub title: Option<String>,
     pub model: Option<String>,
+    /// Caller-chosen id for the new session. Absent → the server generates a
+    /// fresh id. Used by headless `--session-id` to create a session under a
+    /// known id (resume-or-create: the caller checks `session/list` first and
+    /// only starts when the id is not already loaded).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<SessionId>,
     /// Permission mode for the session. Accepted values:
     /// `"auto-approve"`, `"interactive"`, `"deny"`. Absent → server default.
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -69,6 +69,35 @@ struct Cli {
     )]
     dangerously_skip_permissions: bool,
 
+    /// Resume a specific session by id, running the prompt as its next turn (headless).
+    #[arg(
+        short = 'r',
+        long = "resume",
+        value_name = "SESSION_ID",
+        global = true,
+        conflicts_with_all = ["continue_session", "session_id"]
+    )]
+    resume: Option<String>,
+
+    /// Resume the most recent session in the current directory (headless).
+    #[arg(
+        short = 'c',
+        long = "continue",
+        global = true,
+        default_value_t = false,
+        conflicts_with_all = ["resume", "session_id"]
+    )]
+    continue_session: bool,
+
+    /// Run under a specific session id, resuming it if it exists or creating it (headless).
+    #[arg(
+        long = "session-id",
+        value_name = "UUID",
+        global = true,
+        conflicts_with_all = ["resume", "continue_session"]
+    )]
+    session_id: Option<String>,
+
     /// Keep the UI in the main terminal buffer instead of switching to the alternate screen.
     #[arg(long = "no-alt-screen", default_value_t = false)]
     no_alt_screen: bool,
@@ -110,6 +139,9 @@ impl Cli {
             allowed_tools: self.allowed_tools.clone(),
             disallowed_tools: self.disallowed_tools.clone(),
             skip_permissions: self.dangerously_skip_permissions,
+            resume: self.resume.clone(),
+            continue_session: self.continue_session,
+            session_id: self.session_id.clone(),
         }
     }
 }
@@ -391,6 +423,9 @@ mod tests {
             allowed_tools: Vec::new(),
             disallowed_tools: Vec::new(),
             dangerously_skip_permissions: false,
+            resume: None,
+            continue_session: false,
+            session_id: None,
             no_alt_screen: false,
             log_level: None,
             verbose: false,

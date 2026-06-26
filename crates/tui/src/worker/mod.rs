@@ -766,6 +766,7 @@ async fn ensure_session_started(
             ephemeral: false,
             title: None,
             model: Some(model.to_string()),
+            session_id: None,
             permission_mode: None,
             sandbox_mode: None,
         })

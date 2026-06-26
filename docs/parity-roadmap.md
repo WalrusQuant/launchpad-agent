@@ -14,14 +14,14 @@ Legend: `✅` done · `◑` partial · `✗` missing. Every `◑`/`✗` has conc
 - ✗ **`--output-format text|json|stream-json`** (structured machine output)
 - ✗ **`--input-format text|stream-json`**
 - ✅ **stdin piping** (`cat x | lpagent -p`)
-- ✗ **`--continue` (resume most recent)** and **`--resume <id>`** flags
+- ✅ **`--continue` (resume most recent in cwd)** and **`--resume <id>`** flags
 - ✅ **`--model` flag**; ✗ **`--fallback-model`**
 - ✗ **`--permission-mode` flag**
 - ✅ **`--allowed-tools` / `--disallowed-tools` flags**
 - ✅ **`--append-system-prompt` / `--system-prompt` flags**
 - ✗ **`--add-dir` (extra working roots)**
 - ✗ **`--mcp-config` / `--settings` flags**
-- ✗ **`--session-id` flag**
+- ✅ **`--session-id` flag** (resume-or-create under a caller-chosen id)
 - ✅ **`--verbose` / `--debug` flags**
 - ✅ **`--dangerously-skip-permissions`**
 - ✅ **Documented exit codes** for scripting (0 success / 1 failure / 2 usage)
@@ -191,7 +191,7 @@ Legend: `✅` done · `◑` partial · `✗` missing. Every `◑`/`✗` has conc
 - ✅ persistence · ✅ resume · ✅ fork
 - ◑ **`/export`** (Markdown transcript) ✅ · ✗ **JSON export / share link**
 - ✗ **Conversation search** (across sessions/messages)
-- ✗ **CLI `--continue` / `--resume`** (see §1)
+- ✅ **CLI `--continue` / `--resume` / `--session-id`** (headless; every `-p` run persists a rollout, see §1)
 
 ## 17. Cost / usage / telemetry
 

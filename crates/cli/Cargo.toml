@@ -35,3 +35,4 @@ colored = { workspace = true }
 
 [dev-dependencies]
 pretty_assertions = "1"
+chrono = { workspace = true }
