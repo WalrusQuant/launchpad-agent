@@ -1,6 +1,6 @@
 # CLI Resume Flags — `--continue` / `--resume` / `--session-id`
 
-**Status: Phases 1–3 SHIPPED (2026-06-26). Phase 4 (docs) mostly done; integration test pending.** Parity roadmap §1 + §16.
+**Status: COMPLETE (2026-06-26). All 4 phases shipped + verified.** Parity roadmap §1 + §16.
 
 Phase 1 routed all headless runs through the server (persisted) and folded in
 the de-risked Phase 3 server-side env honoring. Phase 2 added the resume flags:
@@ -63,7 +63,7 @@ lpagent -p --session-id <uuid> "..."      # -> run under a caller-chosen id (res
 
 ### Phase 4 — tests + docs
 - [x] Unit: flag parsing, conflict rejection, `--continue` selection (most-recent-in-cwd), uuid validation.
-- [ ] Integration: `-p` start → persist → `-p --resume` round-trip shows continued context.
+- [x] Integration: persist → rebuild → resume round-trip asserts the resumed turn's model request carries prior context (`crates/server/tests/persistence_resume.rs::resume_replays_prior_context_into_next_turn`).
 - [x] Docs: README headless section, `docs/parity-roadmap.md` (§1 `--continue`/`--resume`/`--session-id` ✅, §16 ✅), CLAUDE.md headless bullet, exit-code docs. Bump test count.
 
 ## Open questions / risks

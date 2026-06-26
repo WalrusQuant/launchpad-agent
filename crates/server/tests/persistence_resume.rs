@@ -59,6 +59,56 @@ impl ModelProviderSDK for SingleReplyProvider {
     }
 }
 
+/// A mock provider that records every streamed turn request, so a test can
+/// assert what conversation context the model actually saw on a given turn.
+#[derive(Clone, Default)]
+struct RecordingProvider {
+    requests: Arc<std::sync::Mutex<Vec<ModelRequest>>>,
+}
+
+#[async_trait]
+impl ModelProviderSDK for RecordingProvider {
+    async fn completion(&self, _request: ModelRequest) -> Result<ModelResponse, ProviderError> {
+        // Used only for background title generation; not recorded.
+        Ok(ModelResponse {
+            id: "title-rec".into(),
+            content: vec![ResponseContent::Text("Recorded title".to_string())],
+            stop_reason: Some(StopReason::EndTurn),
+            usage: Usage::default(),
+            metadata: ResponseMetadata::default(),
+        })
+    }
+
+    async fn completion_stream(
+        &self,
+        request: ModelRequest,
+    ) -> Result<
+        std::pin::Pin<Box<dyn futures::Stream<Item = Result<StreamEvent, ProviderError>> + Send>>,
+        ProviderError,
+    > {
+        self.requests.lock().expect("record request").push(request);
+        Ok(Box::pin(stream::iter(vec![
+            Ok(StreamEvent::TextDelta {
+                index: 0,
+                text: "acknowledged".into(),
+            }),
+            Ok(StreamEvent::MessageDone {
+                response: ModelResponse {
+                    id: "resp-rec".into(),
+                    content: vec![ResponseContent::Text("acknowledged".into())],
+                    stop_reason: Some(StopReason::EndTurn),
+                    usage: Usage::default(),
+                    metadata: ResponseMetadata::default(),
+                },
+            }),
+        ])))
+    }
+
+    fn name(&self) -> &str {
+        "recording-test-provider"
+    }
+}
+
 #[tokio::test]
 async fn runtime_rebuilds_sessions_from_rollout_and_resume_works() -> Result<()> {
     let data_root = TempDir::new()?;
@@ -379,14 +429,159 @@ async fn runtime_assigns_provisional_title_after_first_prompt() -> Result<()> {
     Ok(())
 }
 
+/// The headless `--resume` / `--continue` round-trip at the runtime layer: a
+/// turn runs on one runtime, then a FRESH runtime — as a new `lpagent -p
+/// --resume` process does — loads the persisted session, resumes it, and runs a
+/// second turn. Asserts the second turn's model request carries the first turn's
+/// context, i.e. resume actually replayed history into the conversation the
+/// model sees (not just the session metadata).
+#[tokio::test]
+async fn resume_replays_prior_context_into_next_turn() -> Result<()> {
+    const MARKER: &str = "the-magic-word-is-bananas-7f3a";
+    let data_root = TempDir::new()?;
+
+    // First "process": create a persisted session and run one turn.
+    let first_runtime =
+        build_runtime_with(data_root.path(), Arc::new(RecordingProvider::default()))?;
+    let (first_connection, mut first_notifications) = initialize_connection(&first_runtime).await?;
+    let session_id =
+        start_persisted_session(&first_runtime, first_connection, data_root.path(), 1).await?;
+    start_turn(
+        &first_runtime,
+        first_connection,
+        session_id,
+        &format!("remember: {MARKER}"),
+        2,
+    )
+    .await?;
+    wait_for_turn_completed(&mut first_notifications).await?;
+
+    // Second "process": fresh runtime, load persisted sessions, resume, run a
+    // follow-up turn. Record what the provider sees on that turn.
+    let recorder = RecordingProvider::default();
+    let captured_requests = Arc::clone(&recorder.requests);
+    let resumed_runtime = build_runtime_with(data_root.path(), Arc::new(recorder))?;
+    resumed_runtime.load_persisted_sessions().await?;
+    let (second_connection, mut second_notifications) =
+        initialize_connection(&resumed_runtime).await?;
+
+    let resume_response = resumed_runtime
+        .handle_incoming(
+            second_connection,
+            serde_json::json!({
+                "id": 3,
+                "method": "session/resume",
+                "params": { "session_id": session_id }
+            }),
+        )
+        .await
+        .context("session/resume response")?;
+    let _: lpa_server::SuccessResponse<lpa_server::SessionResumeResult> =
+        serde_json::from_value(resume_response)?;
+
+    start_turn(
+        &resumed_runtime,
+        second_connection,
+        session_id,
+        "what is the magic word?",
+        4,
+    )
+    .await?;
+    wait_for_turn_completed(&mut second_notifications).await?;
+
+    let requests = captured_requests.lock().expect("read recorded requests");
+    let follow_up = requests
+        .last()
+        .context("resumed turn did not reach the provider")?;
+    let serialized = serde_json::to_string(&follow_up.messages)?;
+    assert!(
+        serialized.contains(MARKER),
+        "resumed turn's request should replay the prior user message; got: {serialized}"
+    );
+    assert!(
+        serialized.contains("acknowledged"),
+        "resumed turn's request should replay the prior assistant reply; got: {serialized}"
+    );
+    assert!(
+        serialized.contains("what is the magic word?"),
+        "resumed turn's request should include the new prompt; got: {serialized}"
+    );
+    Ok(())
+}
+
 fn build_runtime(data_root: &std::path::Path) -> Result<Arc<ServerRuntime>> {
+    build_runtime_with(data_root, Arc::new(SingleReplyProvider))
+}
+
+/// Starts a persisted (non-ephemeral) session and returns its id.
+async fn start_persisted_session(
+    runtime: &Arc<ServerRuntime>,
+    connection_id: u64,
+    cwd: &std::path::Path,
+    request_id: u64,
+) -> Result<lpa_protocol::SessionId> {
+    let response = runtime
+        .handle_incoming(
+            connection_id,
+            serde_json::json!({
+                "id": request_id,
+                "method": "session/start",
+                "params": { "cwd": cwd, "ephemeral": false, "title": null, "model": "test-model" }
+            }),
+        )
+        .await
+        .context("session/start response")?;
+    Ok(
+        serde_json::from_value::<lpa_server::SuccessResponse<lpa_server::SessionStartResult>>(
+            response,
+        )?
+        .result
+        .session_id,
+    )
+}
+
+/// Starts one turn with a single text input.
+async fn start_turn(
+    runtime: &Arc<ServerRuntime>,
+    connection_id: u64,
+    session_id: lpa_protocol::SessionId,
+    text: &str,
+    request_id: u64,
+) -> Result<()> {
+    let response = runtime
+        .handle_incoming(
+            connection_id,
+            serde_json::json!({
+                "id": request_id,
+                "method": "turn/start",
+                "params": {
+                    "session_id": session_id,
+                    "input": [{ "type": "text", "text": text }],
+                    "model": null,
+                    "sandbox": null,
+                    "approval_policy": null,
+                    "cwd": null
+                }
+            }),
+        )
+        .await
+        .context("turn/start response")?;
+    let _: lpa_server::SuccessResponse<lpa_server::TurnStartResult> =
+        serde_json::from_value(response)?;
+    Ok(())
+}
+
+fn build_runtime_with(
+    data_root: &std::path::Path,
+    provider: Arc<dyn ModelProviderSDK>,
+) -> Result<Arc<ServerRuntime>> {
     let mcp_manager: Arc<dyn lpa_mcp::McpManager> = Arc::new(lpa_mcp::StdMcpManager::from_config(
         &lpa_mcp::McpConfig::default(),
     )?);
     Ok(ServerRuntime::new(
         data_root.to_path_buf(),
         ServerRuntimeDependencies::new(
-            Arc::new(SingleReplyProvider),
+            provider,
             Arc::new(ToolRegistry::new()),
             "test-model".to_string(),
             Arc::new(PresetModelCatalog::default()),
