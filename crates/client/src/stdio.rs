@@ -42,12 +42,25 @@ pub struct ServerNotificationMessage {
     pub params: serde_json::Value,
 }
 
+/// Per-request response deadline for ordinary requests, once the server is up
+/// and answering. These return promptly (turns stream over notifications, not
+/// the request channel), so a tight bound surfaces a wedged server quickly.
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Default deadline for the `initialize` handshake. This one is generous because
+/// the server only starts answering after it has booted MCP servers and replayed
+/// every persisted session from disk (see `run_server_process`), which can take
+/// many seconds with a large session store or under load. Override with
+/// `LPA_SERVER_INIT_TIMEOUT_SECS`.
+const DEFAULT_INIT_TIMEOUT_SECS: u64 = 60;
+
 pub struct StdioServerClient {
     child: Child,
     stdin: ChildStdin,
     pending: Arc<Mutex<HashMap<u64, oneshot::Sender<serde_json::Value>>>>,
     next_request_id: AtomicU64,
     notifications_rx: mpsc::UnboundedReceiver<ServerNotificationMessage>,
+    init_timeout: Duration,
 }
 
 impl StdioServerClient {
@@ -72,6 +85,12 @@ impl StdioServerClient {
         command.stdin(Stdio::piped());
         command.stdout(Stdio::piped());
         command.stderr(Stdio::piped());
+        // Guarantee the server child dies with this client even on paths that
+        // skip the explicit `shutdown()` — a failed `initialize`, an early `?`,
+        // a SIGPIPE on a truncated pipe, or a panic. Without this, those paths
+        // orphan a running `lpagent server`, and accumulated orphans starve the
+        // machine so later spawns time out during cold boot.
+        command.kill_on_drop(true);
 
         let mut child = command
             .spawn()
@@ -97,14 +116,16 @@ impl StdioServerClient {
             pending,
             next_request_id: AtomicU64::new(1),
             notifications_rx,
+            init_timeout: resolve_init_timeout(std::env::var("LPA_SERVER_INIT_TIMEOUT_SECS").ok()),
         })
     }
 
     pub async fn initialize(&mut self) -> Result<InitializeResult> {
         tracing::info!("initializing stdio server client");
-        let result = timeout(
-            Duration::from_secs(10),
-            self.request(
+        // `initialize` waits for the full server cold-boot (MCP + persisted
+        // session replay), so it gets a longer deadline than ordinary requests.
+        let result = self
+            .request_with_timeout(
                 "initialize",
                 InitializeParams {
                     client_name: "lpagent".into(),
@@ -114,10 +135,9 @@ impl StdioServerClient {
                     supports_binary_images: false,
                     opt_out_notification_methods: Vec::new(),
                 },
-            ),
-        )
-        .await
-        .context("timed out waiting for initialize response from server")??;
+                self.init_timeout,
+            )
+            .await?;
         self.notify("initialized", serde_json::json!({})).await?;
         tracing::info!("stdio server client initialized");
         Ok(result)
@@ -232,6 +252,23 @@ impl StdioServerClient {
         P: serde::Serialize,
         R: DeserializeOwned,
     {
+        self.request_with_timeout(method, params, REQUEST_TIMEOUT)
+            .await
+    }
+
+    /// Sends one request and awaits its response under an explicit deadline.
+    /// `initialize` passes a longer deadline than [`REQUEST_TIMEOUT`] because it
+    /// races the server's cold boot.
+    async fn request_with_timeout<P, R>(
+        &mut self,
+        method: &str,
+        params: P,
+        deadline: Duration,
+    ) -> Result<R>
+    where
+        P: serde::Serialize,
+        R: DeserializeOwned,
+    {
         let request_id = self.next_request_id.fetch_add(1, Ordering::SeqCst);
         tracing::debug!(request_id, method, "sending client request");
         let (response_tx, response_rx) = oneshot::channel();
@@ -243,10 +280,10 @@ impl StdioServerClient {
         })
         .await?;
 
-        let response = timeout(Duration::from_secs(10), response_rx)
+        let response = timeout(deadline, response_rx)
             .await
             .with_context(|| {
-                format!("timed out waiting for server response to request {request_id}")
+                format!("timed out waiting for server response to request {request_id} ({method})")
             })?
             .with_context(|| format!("server dropped response for request {request_id}"))?;
         tracing::debug!(request_id, method, "received client response");
@@ -350,5 +387,51 @@ fn format_protocol_error_code(code: &ProtocolErrorCode) -> &'static str {
         ProtocolErrorCode::ActiveTurnNotSteerable => "active_turn_not_steerable",
         ProtocolErrorCode::EmptyInput => "empty_input",
         ProtocolErrorCode::InternalError => "internal_error",
+    }
+}
+
+/// Resolves the `initialize` deadline from the optional `LPA_SERVER_INIT_TIMEOUT_SECS`
+/// value, falling back to [`DEFAULT_INIT_TIMEOUT_SECS`] when unset, unparseable,
+/// or zero. Pure so the parsing is unit-tested without touching process env.
+fn resolve_init_timeout(env_value: Option<String>) -> Duration {
+    let secs = env_value
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .filter(|&secs| secs > 0)
+        .unwrap_or(DEFAULT_INIT_TIMEOUT_SECS);
+    Duration::from_secs(secs)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{DEFAULT_INIT_TIMEOUT_SECS, resolve_init_timeout};
+    use pretty_assertions::assert_eq;
+    use tokio::time::Duration;
+
+    #[test]
+    fn init_timeout_defaults_when_unset() {
+        assert_eq!(
+            resolve_init_timeout(None),
+            Duration::from_secs(DEFAULT_INIT_TIMEOUT_SECS)
+        );
+    }
+
+    #[test]
+    fn init_timeout_honors_valid_override() {
+        assert_eq!(
+            resolve_init_timeout(Some("120".to_string())),
+            Duration::from_secs(120)
+        );
+    }
+
+    #[test]
+    fn init_timeout_rejects_zero_and_garbage() {
+        assert_eq!(
+            resolve_init_timeout(Some("0".to_string())),
+            Duration::from_secs(DEFAULT_INIT_TIMEOUT_SECS)
+        );
+        assert_eq!(
+            resolve_init_timeout(Some("not-a-number".to_string())),
+            Duration::from_secs(DEFAULT_INIT_TIMEOUT_SECS)
+        );
     }
 }

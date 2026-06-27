@@ -36,3 +36,25 @@ the `test-model`/`sk-test` fixture.
 - Onboarding 401 path: validation uses `onboarding_selected_api_key`; if the user
   doesn't paste a key at the prompt it stays None → 401. A directly-written
   `config.toml` (key inline) bypasses the onboarding flow entirely.
+
+## Spawned server subprocesses must set `kill_on_drop(true)` (2026-06-26)
+
+- `StdioServerClient` (used by both the TUI and headless) spawns `lpagent server`
+  as a child. The explicit `shutdown()` only runs on the happy path — a failed
+  `initialize`, an early `?`, a SIGPIPE (e.g. `lpagent ... | head -1` closing the
+  pipe mid-run), or a panic all drop the client *without* killing the child.
+  Tokio's `Child` does **not** kill on drop by default, so every such path
+  orphaned a running server. Orphans accumulate, starve CPU, and make later
+  spawns time out during cold boot — which looked like a flaky "init timeout."
+- Fix: `command.kill_on_drop(true)` in `spawn`. The dropped client now reaps the
+  server on every exit path (drop happens inside the live tokio runtime).
+- Debugging trap: a test harness that pipes the program under test to `head`/`sed`
+  SIGPIPE-kills it mid-run. With the old code that *created* the orphans I was
+  trying to diagnose — the harness caused the symptom. Verify subprocess cleanup
+  with `ps aux | grep <child>` after abnormal-exit runs, not just exit codes.
+- Secondary fix: `initialize` legitimately waits for full server cold boot (MCP +
+  persisted-session replay), so it gets a longer, env-overridable deadline
+  (`LPA_SERVER_INIT_TIMEOUT_SECS`, default 60) instead of sharing the 10s
+  per-request timeout. Deeper follow-up (not done): the server replays all
+  sessions *before* answering `initialize` (`run_server_process` order) — moving
+  that after the handshake would make init constant-time regardless of store size.

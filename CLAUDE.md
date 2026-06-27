@@ -35,18 +35,19 @@ No justfile / Makefile. Use cargo directly:
 
 ```bash
 cargo build --release
-cargo test --workspace      # 478 tests currently passing
+cargo test --workspace      # 481 tests currently passing
 cargo run -- onboard        # TUI configure flow (alias: the app launches straight into it on first run)
 cargo run -- prompt "..."   # Single-shot completion
 ```
 
-Rust 1.85+. All 478 tests currently pass — keep it that way.
+Rust 1.85+. All 481 tests currently pass — keep it that way.
 
 ## Config & env
 
 - `LPA_HOME` — config dir (default `~/.launchpad/agent`)
 - `LPA_PROVIDER`, `LPA_MODEL`, `LPA_WIRE_API`, `LPA_BASE_URL`, `LPA_API_KEY`
 - Per-provider key fallbacks: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY` / `GEMINI_API_KEY`
+- `LPA_SERVER_INIT_TIMEOUT_SECS` — client `initialize` handshake deadline (default 60). The TUI/headless client waits this long for the spawned `lpagent server` to finish cold boot (MCP + persisted session replay) before erroring. Bump it if you have a very large session store.
 - User config: `~/.launchpad/agent/config.toml`
 - Project overrides: `<workspace>/.lpagent/config.toml`
 
