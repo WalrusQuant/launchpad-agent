@@ -1,3 +1,52 @@
+# Review of the headless/resume arc (de62497..e4594e5)
+
+**Status: reviewed + fixed (2026-06-26).** Same multi-angle review run against
+the 5-commit headless arc (route headless through server, `--resume`/`--continue`/
+`--session-id`, `--output-format`, kill-on-drop + init timeout). Core mechanics
+were sound (no inverted conditions / off-by-one / swallowed errors / wrong exit
+codes); findings were robustness + quality.
+
+**Fixed:**
+- **Silent empty toolset.** `apply_tool_filters` (`crates/tools/src/registry.rs`)
+  matched tool names exactly and case-sensitively, so a Claude-Code-style
+  `--allowed-tools "Read,Bash"` (capitalized) or any typo silently stripped every
+  tool and the agent ran unable to act with no diagnostic. Now warns on filter
+  entries that name no registered tool and when an allow-list empties the registry.
+- **Duplicated final-text extractor.** `completed_agent_message_text` was a
+  byte-for-byte copy in `cli/src/event_text.rs` and `tui/.../event_mapping.rs`.
+  Hoisted to `ItemEventPayload::agent_message_text` in `lpa-protocol`; deleted
+  both copies (and the `event_text` module). Both crates now call the method.
+- **Resume flags silently dropped outside headless.** `lpagent --resume <id>`
+  without `-p` opened a fresh TUI and ignored the flag. `main.rs` now exits with
+  the usage code and an explanatory message.
+- **AGENTS.md positional-literal rule.** Annotated the bare `None` at the
+  `start_session(..)` New-session call site as `/*session_id*/ None`.
+
+488 tests pass; fmt + clippy clean.
+
+**Deferred follow-ups (real, but larger than a review fix — recorded, not done):**
+- **No turn/idle timeout in the headless drive loop** (`headless.rs::drive_turn_to_completion`):
+  a wedged provider call hangs `lpagent -p` forever. The request timeout only
+  covers RPCs; the turn streams over notifications unbounded. Wants an *idle*
+  timeout (not wall-clock — long legitimate turns are normal) + turn cancel,
+  with a configurable value. Top follow-up.
+- **Eager full session-store replay at bootstrap** (`bootstrap.rs::load_persisted_sessions`):
+  every `-p` run replays the entire on-disk store before answering `initialize`
+  (the reason the init timeout was bumped to 60s), even for fresh `New` sessions
+  that need none of it. Wants lazy/on-demand load of just the resumed session.
+- **Process-global headless env overrides** (`LPA_SYSTEM_PROMPT` / tool filters):
+  correct for the single-tenant headless server but leak into every session if
+  the server ever goes multi-tenant. Graduate to per-`session/start` params (as
+  `session_id` / `permission_mode` already are) when subagents land.
+- **`session/start` clobbers an existing in-memory id** (`handlers_session.rs`):
+  TOCTOU-safe only because headless serializes list→start; the server itself has
+  no guard against replacing a loaded `RuntimeSession`.
+- **Pre-turn/infra errors ignore `--output-format`**: a failed resume/continue
+  under `--output-format json` prints plaintext to stderr with no JSON `result`
+  object. Documented as intentional today; revisit if scripting consumers need it.
+
+---
+
 # Prompt caching (§12)
 
 **Status: COMPLETE (2026-06-26). Shipped + verified.** Parity roadmap §12.

@@ -67,9 +67,27 @@ impl Default for ToolRegistry {
 /// from whatever remains. Shared by the headless CLI path and the server
 /// bootstrap (which honors the `LPA_ALLOWED_TOOLS` / `LPA_DISALLOWED_TOOLS` env
 /// vars set by a headless run) so both apply identical semantics.
+///
+/// Matching is exact and case-sensitive against the registered tool names (all
+/// lowercase, MCP tools as `mcp__<server>__<tool>`). Any filter entry that names
+/// no registered tool is logged at `warn`, and an allow-list that leaves the
+/// registry empty is called out explicitly — otherwise a typo or a capitalized
+/// `Read`/`Bash` (the Claude Code spelling) silently strips every tool and the
+/// agent runs unable to act with no diagnostic.
 pub fn apply_tool_filters(registry: &mut ToolRegistry, allowed: &[String], disallowed: &[String]) {
+    for name in allowed.iter().chain(disallowed) {
+        if registry.get(name).is_none() {
+            tracing::warn!(tool = %name, "tool filter names an unregistered tool; it will have no effect");
+        }
+    }
     if !allowed.is_empty() {
         registry.retain(|name| allowed.iter().any(|candidate| candidate == name));
+        if registry.all().is_empty() {
+            tracing::warn!(
+                allowed = ?allowed,
+                "--allowed-tools matched no registered tools; the agent will run with no tools available"
+            );
+        }
     }
     if !disallowed.is_empty() {
         registry.retain(|name| !disallowed.iter().any(|denied| denied == name));

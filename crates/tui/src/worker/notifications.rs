@@ -5,7 +5,7 @@ use lpa_server::{ServerEvent, TurnEventPayload};
 
 use crate::events::WorkerEvent;
 
-use super::event_mapping::{completed_agent_message_text, handle_completed_item};
+use super::event_mapping::handle_completed_item;
 
 /// Mutable worker state that the server-notification dispatcher updates in place.
 pub(super) struct NotificationState<'a> {
@@ -50,7 +50,7 @@ pub(super) fn dispatch_server_notification(
         }
         "item/completed" => {
             if let ServerEvent::ItemCompleted(payload) = event {
-                if let Some(text) = completed_agent_message_text(&payload) {
+                if let Some(text) = payload.agent_message_text() {
                     *state.latest_completed_agent_message = Some(text);
                 }
                 // Completed tool items are mapped into compact UI events

@@ -8,7 +8,6 @@ use lpa_server::{ServerProcessArgs, run_server_process};
 use lpa_utils::find_lpa_home;
 
 mod agent;
-mod event_text;
 mod headless;
 mod headless_output;
 mod server_env;
@@ -172,6 +171,17 @@ async fn main() -> Result<()> {
     if let Some(Command::Prompt { input }) = &cli.command {
         let prompt = resolve_prompt_text(input.clone().unwrap_or_default())?;
         return run_headless_and_exit(cli.headless_options(prompt)).await;
+    }
+
+    // The resume flags only take effect on the headless (`-p`/`prompt`) path
+    // today. Supplied without a headless dispatch they would otherwise be
+    // silently dropped and a fresh interactive session opened — fail loudly
+    // instead so the caller does not believe they resumed.
+    if cli.resume.is_some() || cli.continue_session || cli.session_id.is_some() {
+        eprintln!(
+            "error: --resume/--continue/--session-id require -p/--print or the `prompt` subcommand"
+        );
+        std::process::exit(exit_codes::USAGE);
     }
 
     let log_level = cli.effective_log_level().map(LogLevel::as_str);

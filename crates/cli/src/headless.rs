@@ -19,7 +19,6 @@ use lpa_protocol::{
     SessionSummary, TurnStartParams, TurnStatus,
 };
 
-use crate::event_text::completed_agent_message_text;
 use crate::headless_output::{OutputFormat, TurnOutcome, emit_stream_event, render_result};
 use crate::server_env::server_env_overrides;
 
@@ -237,9 +236,11 @@ async fn resolve_target_session(
     selector: SessionSelector,
 ) -> Result<SessionId> {
     match selector {
-        SessionSelector::New => Ok(start_session(client, options, resolved, cwd, None)
-            .await
-            .context("start session")?),
+        SessionSelector::New => Ok(start_session(
+            client, options, resolved, cwd, /*session_id*/ None,
+        )
+        .await
+        .context("start session")?),
         SessionSelector::Resume(id) => {
             resume(client, id).await.context("resume session")?;
             Ok(id)
@@ -323,7 +324,7 @@ async fn drive_turn_to_completion(
         }
         match event {
             ServerEvent::ItemCompleted(payload) => {
-                if let Some(text) = completed_agent_message_text(&payload) {
+                if let Some(text) = payload.agent_message_text() {
                     final_message = Some(text);
                 }
             }

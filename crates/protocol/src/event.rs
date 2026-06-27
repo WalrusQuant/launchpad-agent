@@ -26,6 +26,28 @@ pub struct ItemEventPayload {
     pub item: ItemEnvelope,
 }
 
+impl ItemEventPayload {
+    /// Returns the trimmed text of a completed agent-message item, or `None` for
+    /// any other item kind or an empty message. Used by both the TUI worker and
+    /// the headless driver to capture the final assistant reply (`turn/completed`
+    /// carries only status, so the text must come from the item stream).
+    pub fn agent_message_text(&self) -> Option<String> {
+        match &self.item {
+            ItemEnvelope {
+                item_kind: ItemKind::AgentMessage,
+                payload,
+                ..
+            } => payload
+                .get("text")
+                .and_then(serde_json::Value::as_str)
+                .map(str::trim)
+                .filter(|text| !text.is_empty())
+                .map(ToOwned::to_owned),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ItemDeltaPayload {
     pub context: EventContext,

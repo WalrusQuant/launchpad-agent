@@ -6,22 +6,6 @@ use crate::events::WorkerEvent;
 
 use super::tool_render::{render_json_preview, render_json_value_text, summarize_tool_call};
 
-pub(super) fn completed_agent_message_text(payload: &ItemEventPayload) -> Option<String> {
-    match &payload.item {
-        ItemEnvelope {
-            item_kind: ItemKind::AgentMessage,
-            payload,
-            ..
-        } => payload
-            .get("text")
-            .and_then(serde_json::Value::as_str)
-            .map(str::trim)
-            .filter(|text| !text.is_empty())
-            .map(ToOwned::to_owned),
-        _ => None,
-    }
-}
-
 pub(super) fn handle_completed_item(
     payload: ItemEventPayload,
     event_tx: &mpsc::UnboundedSender<WorkerEvent>,
