@@ -72,6 +72,7 @@ user_roots = ["custom-user-skills"]
             summary_model: SummaryModelSelection::UseAxiliaryModel,
             safety_policy_model: SafetyPolicyModelSelection::UseTurnModel,
             sandbox: super::SandboxConfig::default(),
+            caching: super::CachingConfig::default(),
             context: ContextManageConfig {
                 preserve_recent_turns: 5,
                 auto_compact_percent: Some(80),

@@ -310,7 +310,12 @@ fn parse_usage(value: &Value) -> Option<Usage> {
             .or_else(|| value.get("completion_tokens"))
             .and_then(Value::as_u64)? as usize,
         cache_creation_input_tokens: None,
-        cache_read_input_tokens: None,
+        cache_read_input_tokens: value
+            .get("input_tokens_details")
+            .or_else(|| value.get("prompt_tokens_details"))
+            .and_then(|details| details.get("cached_tokens"))
+            .and_then(Value::as_u64)
+            .map(|tokens| tokens as usize),
     })
 }
 
@@ -648,6 +653,20 @@ mod tests {
     use crate::openai::responses::build_request;
 
     #[test]
+    fn parse_usage_reads_cached_tokens_from_input_details() {
+        let usage = super::parse_usage(&json!({
+            "input_tokens": 1200,
+            "output_tokens": 80,
+            "input_tokens_details": { "cached_tokens": 1024 }
+        }))
+        .expect("usage parses");
+        assert_eq!(usage.input_tokens, 1200);
+        assert_eq!(usage.output_tokens, 80);
+        assert_eq!(usage.cache_read_input_tokens, Some(1024));
+        assert_eq!(usage.cache_creation_input_tokens, None);
+    }
+
+    #[test]
     fn debug_request_body_includes_reasoning_and_tools() {
         let request = ModelRequest {
             model: "gpt-5.4".to_string(),
@@ -671,6 +690,7 @@ mod tests {
             },
             thinking: Some("medium".to_string()),
             extra_body: None,
+            cache_prompt: false,
         };
 
         let body = build_request(&request, true);

@@ -93,6 +93,7 @@ impl ContextCompactor for LlmContextCompactor {
             sampling: SamplingControls::default(),
             thinking: None,
             extra_body: None,
+            cache_prompt: false,
         };
 
         let response = self.provider.completion(request).await.map_err(|err| {

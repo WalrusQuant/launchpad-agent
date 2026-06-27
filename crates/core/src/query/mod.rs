@@ -245,6 +245,7 @@ pub async fn query(
             },
             thinking: request_thinking,
             extra_body,
+            cache_prompt: session.config.prompt_caching_enabled,
         };
         debug!(
             messages = request.messages.len(),

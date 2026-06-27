@@ -1,3 +1,4 @@
+mod cache;
 pub mod messages;
 pub mod role;
 

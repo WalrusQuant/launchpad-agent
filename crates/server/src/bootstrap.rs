@@ -152,7 +152,8 @@ pub async fn run_server_process(args: ServerProcessArgs) -> Result<()> {
         .with_base_instructions_override(BaseInstructionsOverride {
             replace: env_nonempty("LPA_SYSTEM_PROMPT"),
             append: env_nonempty("LPA_APPEND_SYSTEM_PROMPT"),
-        }),
+        })
+        .with_prompt_caching(config.caching.enabled),
     );
     tracing::info!("starting persisted session restore");
     runtime.load_persisted_sessions().await?;

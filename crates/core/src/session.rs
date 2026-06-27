@@ -20,6 +20,10 @@ pub struct SessionConfig {
     /// sandbox-aware `RuleBasedPolicy` that gates FileWrite and ShellExec
     /// based on `workspace_write` and the session's cwd.
     pub sandbox_policy: Option<SandboxPolicyRecord>,
+    /// When true, the query loop opts the turn request into provider-side prompt
+    /// caching (`ModelRequest::cache_prompt`). Sourced from the `[caching]`
+    /// config section. Defaults to enabled.
+    pub prompt_caching_enabled: bool,
 }
 
 impl Default for SessionConfig {
@@ -28,6 +32,7 @@ impl Default for SessionConfig {
             token_budget: TokenBudget::default(),
             permission_mode: PermissionMode::AutoApprove,
             sandbox_policy: None,
+            prompt_caching_enabled: true,
         }
     }
 }

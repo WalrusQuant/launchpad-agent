@@ -67,6 +67,13 @@ pub struct ModelRequest {
     pub thinking: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub extra_body: Option<Value>,
+    /// When true, the provider may attach prompt-caching breakpoints (e.g.
+    /// Anthropic `cache_control`) to the static request prefix and conversation
+    /// tail. Only providers with request-side caching honor this; the rest
+    /// ignore it. Defaults to false so short auxiliary requests (titles,
+    /// compaction) stay uncached unless explicitly opted in.
+    #[serde(default)]
+    pub cache_prompt: bool,
 }
 
 /// A tool definition sent to the model.
@@ -693,6 +700,7 @@ mod tests {
             sampling: SamplingControls::default(),
             thinking: None,
             extra_body: None,
+            cache_prompt: false,
         };
         let json = serde_json::to_string(&req).unwrap();
         assert!(!json.contains("tools"));

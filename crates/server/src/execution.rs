@@ -69,6 +69,9 @@ pub struct ServerRuntimeDependencies {
     /// System-prompt override applied to every resolved turn model. Default
     /// (empty) leaves catalog/base instructions untouched.
     pub(crate) base_instructions_override: BaseInstructionsOverride,
+    /// Prompt-caching default applied to every new session, sourced from the
+    /// `[caching]` config section. Defaults to enabled.
+    pub(crate) prompt_caching_enabled: bool,
 }
 
 impl ServerRuntimeDependencies {
@@ -99,7 +102,15 @@ impl ServerRuntimeDependencies {
             trusted_mcp_tool_names: Arc::new(trusted_mcp_tool_names),
             sandbox_policy,
             base_instructions_override: BaseInstructionsOverride::default(),
+            prompt_caching_enabled: true,
         }
+    }
+
+    /// Sets the prompt-caching default applied to every new session. Used by
+    /// bootstrap to thread the `[caching]` config section into session config.
+    pub fn with_prompt_caching(mut self, enabled: bool) -> Self {
+        self.prompt_caching_enabled = enabled;
+        self
     }
 
     /// Sets the system-prompt override applied to every resolved turn model.
@@ -140,6 +151,7 @@ impl ServerRuntimeDependencies {
     ) -> SessionState {
         let config = session_config.unwrap_or_else(|| SessionConfig {
             sandbox_policy: self.sandbox_policy.clone(),
+            prompt_caching_enabled: self.prompt_caching_enabled,
             ..SessionConfig::default()
         });
         let mut state = SessionState::new(config, cwd);

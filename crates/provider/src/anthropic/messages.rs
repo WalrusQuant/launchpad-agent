@@ -17,6 +17,9 @@ use serde_json::{Value, json};
 use tracing::debug;
 
 use super::AnthropicAIRole;
+use super::cache::{
+    AnthropicSystem, CacheControl, build_system, prompt_input_tokens, read_stream_cache_usage,
+};
 use crate::{
     ModelProviderSDK, ProviderAdapter, ProviderCapabilities, ProviderError, merge_extra_body,
 };
@@ -70,7 +73,7 @@ struct AnthropicMessagesRequest {
     stream: bool,
     messages: Vec<AnthropicInputMessage>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    system: Option<String>,
+    system: Option<AnthropicSystem>,
     #[serde(skip_serializing_if = "Option::is_none")]
     tools: Option<Vec<AnthropicToolDefinition>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -93,12 +96,18 @@ struct AnthropicInputMessage {
 #[serde(tag = "type")]
 enum AnthropicInputContentBlock {
     #[serde(rename = "text")]
-    Text { text: String },
+    Text {
+        text: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cache_control: Option<CacheControl>,
+    },
     #[serde(rename = "tool_use")]
     ToolUse {
         id: String,
         name: String,
         input: Value,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cache_control: Option<CacheControl>,
     },
     #[serde(rename = "tool_result")]
     ToolResult {
@@ -106,6 +115,8 @@ enum AnthropicInputContentBlock {
         content: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         is_error: Option<bool>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cache_control: Option<CacheControl>,
     },
 }
 
@@ -114,6 +125,8 @@ struct AnthropicToolDefinition {
     name: String,
     description: String,
     input_schema: Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cache_control: Option<CacheControl>,
 }
 
 #[derive(Debug, Serialize)]
@@ -286,6 +299,8 @@ impl ModelProviderSDK for AnthropicProvider {
             let mut message_id = String::new();
             let mut input_tokens = 0usize;
             let mut output_tokens = 0usize;
+            let mut cache_creation_input_tokens: Option<usize> = None;
+            let mut cache_read_input_tokens: Option<usize> = None;
             let mut stop_reason: Option<StopReason> = None;
             let mut content_blocks: BTreeMap<usize, ResponseContent> = BTreeMap::new();
             let mut reasoning_blocks: BTreeMap<usize, String> = BTreeMap::new();
@@ -318,11 +333,17 @@ impl ModelProviderSDK for AnthropicProvider {
                                 {
                                     message_id = id.to_string();
                                 }
-                                if let Some(usage) = data.get("usage")
-                                    && let Some(input) =
+                                if let Some(usage) = data.get("usage") {
+                                    if let Some(input) =
                                         usage.get("input_tokens").and_then(Value::as_u64)
-                                {
-                                    input_tokens = input as usize;
+                                    {
+                                        input_tokens = input as usize;
+                                    }
+                                    read_stream_cache_usage(
+                                        usage,
+                                        &mut cache_creation_input_tokens,
+                                        &mut cache_read_input_tokens,
+                                    );
                                 }
                             }
                             "content_block_start" => {
@@ -462,11 +483,20 @@ impl ModelProviderSDK for AnthropicProvider {
                                     {
                                         output_tokens = output as usize;
                                     }
+                                    read_stream_cache_usage(
+                                        usage,
+                                        &mut cache_creation_input_tokens,
+                                        &mut cache_read_input_tokens,
+                                    );
                                     yield StreamEvent::UsageDelta(Usage {
-                                        input_tokens,
+                                        input_tokens: prompt_input_tokens(
+                                            input_tokens,
+                                            cache_creation_input_tokens,
+                                            cache_read_input_tokens,
+                                        ),
                                         output_tokens,
-                                        cache_creation_input_tokens: None,
-                                        cache_read_input_tokens: None,
+                                        cache_creation_input_tokens,
+                                        cache_read_input_tokens,
                                     });
                                 }
                             }
@@ -476,10 +506,14 @@ impl ModelProviderSDK for AnthropicProvider {
                                     content: content_blocks.into_values().collect(),
                                     stop_reason: stop_reason.clone(),
                                     usage: Usage {
-                                        input_tokens,
+                                        input_tokens: prompt_input_tokens(
+                                            input_tokens,
+                                            cache_creation_input_tokens,
+                                            cache_read_input_tokens,
+                                        ),
                                         output_tokens,
-                                        cache_creation_input_tokens: None,
-                                        cache_read_input_tokens: None,
+                                        cache_creation_input_tokens,
+                                        cache_read_input_tokens,
                                     },
                                     metadata: ResponseMetadata {
                                         extras: reasoning_blocks
@@ -504,10 +538,14 @@ impl ModelProviderSDK for AnthropicProvider {
                 content: content_blocks.into_values().collect(),
                 stop_reason,
                 usage: Usage {
-                    input_tokens,
+                    input_tokens: prompt_input_tokens(
+                        input_tokens,
+                        cache_creation_input_tokens,
+                        cache_read_input_tokens,
+                    ),
                     output_tokens,
-                    cache_creation_input_tokens: None,
-                    cache_read_input_tokens: None,
+                    cache_creation_input_tokens,
+                    cache_read_input_tokens,
                 },
                 metadata: ResponseMetadata {
                     extras: reasoning_blocks
@@ -629,26 +667,37 @@ impl ProviderAdapter for AnthropicProvider {
 ///   `metadata`, `service_tier`, `stop_sequences`, `top_k`, and `top_p`, are
 ///   not constructed directly here unless supplied through `extra_body`.
 fn build_request(request: &ModelRequest, stream: bool) -> Value {
+    let cache = request.cache_prompt;
+    let has_system = request.system.is_some();
+
+    let mut messages = request
+        .messages
+        .iter()
+        .map(build_message)
+        .collect::<Vec<_>>();
+    let mut tools = request.tools.as_ref().map(|tools| {
+        tools
+            .iter()
+            .map(|tool| AnthropicToolDefinition {
+                name: tool.name.clone(),
+                description: tool.description.clone(),
+                input_schema: tool.input_schema.clone(),
+                cache_control: None,
+            })
+            .collect::<Vec<_>>()
+    });
+
+    if cache {
+        apply_cache_breakpoints(&mut messages, tools.as_deref_mut(), has_system);
+    }
+
     let body = AnthropicMessagesRequest {
         model: request.model.clone(),
         max_tokens: request.max_tokens,
         stream,
-        messages: request
-            .messages
-            .iter()
-            .map(build_message)
-            .collect::<Vec<_>>(),
-        system: request.system.clone(),
-        tools: request.tools.as_ref().map(|tools| {
-            tools
-                .iter()
-                .map(|tool| AnthropicToolDefinition {
-                    name: tool.name.clone(),
-                    description: tool.description.clone(),
-                    input_schema: tool.input_schema.clone(),
-                })
-                .collect::<Vec<_>>()
-        }),
+        messages,
+        system: build_system(request.system.as_deref(), cache),
+        tools,
         thinking: request.thinking.as_deref().and_then(build_thinking),
         temperature: request.sampling.temperature,
         top_p: request.sampling.top_p,
@@ -660,6 +709,46 @@ fn build_request(request: &ModelRequest, stream: bool) -> Value {
     merge_extra_body(&mut root, request.extra_body.as_ref());
 
     root
+}
+
+/// Attaches prompt-cache breakpoints to the request prefix and conversation tail.
+///
+/// - Static prefix: the cache order is tools → system → messages, so a single
+///   breakpoint on the system block (handled in [`build_system`]) caches both
+///   tools and system. When there is no system prompt, the last tool definition
+///   carries the breakpoint instead.
+/// - Conversation tail: the last two messages each get a breakpoint on their
+///   final block, so the previous turn's breakpoint is still a cache hit as the
+///   history grows (rolling incremental caching). At most three breakpoints are
+///   used, within Anthropic's limit of four.
+fn apply_cache_breakpoints(
+    messages: &mut [AnthropicInputMessage],
+    tools: Option<&mut [AnthropicToolDefinition]>,
+    has_system: bool,
+) {
+    if !has_system
+        && let Some(tools) = tools
+        && let Some(last) = tools.last_mut()
+    {
+        last.cache_control = Some(CacheControl::ephemeral());
+    }
+
+    let tail_start = messages.len().saturating_sub(2);
+    for message in messages.iter_mut().skip(tail_start) {
+        if let Some(block) = message.content.last_mut() {
+            mark_block_cached(block);
+        }
+    }
+}
+
+fn mark_block_cached(block: &mut AnthropicInputContentBlock) {
+    match block {
+        AnthropicInputContentBlock::Text { cache_control, .. }
+        | AnthropicInputContentBlock::ToolUse { cache_control, .. }
+        | AnthropicInputContentBlock::ToolResult { cache_control, .. } => {
+            *cache_control = Some(CacheControl::ephemeral())
+        }
+    }
 }
 
 /// Here is the documentation of the Anthropic Messages API response body.
@@ -831,11 +920,15 @@ fn build_message(message: &RequestMessage) -> AnthropicInputMessage {
 
 fn build_content_block(block: &RequestContent) -> AnthropicInputContentBlock {
     match block {
-        RequestContent::Text { text } => AnthropicInputContentBlock::Text { text: text.clone() },
+        RequestContent::Text { text } => AnthropicInputContentBlock::Text {
+            text: text.clone(),
+            cache_control: None,
+        },
         RequestContent::ToolUse { id, name, input } => AnthropicInputContentBlock::ToolUse {
             id: id.clone(),
             name: name.clone(),
             input: input.clone(),
+            cache_control: None,
         },
         RequestContent::ToolResult {
             tool_use_id,
@@ -845,6 +938,7 @@ fn build_content_block(block: &RequestContent) -> AnthropicInputContentBlock {
             tool_use_id: tool_use_id.clone(),
             content: content.clone(),
             is_error: *is_error,
+            cache_control: None,
         },
     }
 }
@@ -881,7 +975,11 @@ fn parse_response_content_block(
 
 fn map_usage(usage: &AnthropicUsage) -> Usage {
     Usage {
-        input_tokens: usage.input_tokens,
+        input_tokens: prompt_input_tokens(
+            usage.input_tokens,
+            usage.cache_creation_input_tokens,
+            usage.cache_read_input_tokens,
+        ),
         output_tokens: usage.output_tokens,
         cache_creation_input_tokens: usage.cache_creation_input_tokens,
         cache_read_input_tokens: usage.cache_read_input_tokens,
@@ -1005,6 +1103,7 @@ mod tests {
             },
             thinking: Some("medium".to_string()),
             extra_body: None,
+            cache_prompt: false,
         };
 
         let body = build_request(&request, true);
@@ -1025,6 +1124,92 @@ mod tests {
             json!("tool_result")
         );
         assert_eq!(body["tools"][0]["name"], json!("get_weather"));
+        // With caching off the system field stays a plain string and no
+        // cache_control markers appear anywhere in the request.
+        assert_eq!(body["system"], json!("You are helpful."));
+        assert!(
+            !serde_json::to_string(&body)
+                .unwrap()
+                .contains("cache_control")
+        );
+    }
+
+    fn cache_request(system: Option<&str>, with_tool: bool) -> ModelRequest {
+        ModelRequest {
+            model: "claude-sonnet-4-6".to_string(),
+            system: system.map(str::to_string),
+            messages: vec![
+                RequestMessage {
+                    role: "assistant".to_string(),
+                    content: vec![
+                        RequestContent::Text {
+                            text: "Calling tool".to_string(),
+                        },
+                        RequestContent::ToolUse {
+                            id: "toolu_123".to_string(),
+                            name: "get_weather".to_string(),
+                            input: json!({"city": "Boston"}),
+                        },
+                    ],
+                },
+                RequestMessage {
+                    role: "user".to_string(),
+                    content: vec![RequestContent::ToolResult {
+                        tool_use_id: "toolu_123".to_string(),
+                        content: "{\"temp\":72}".to_string(),
+                        is_error: Some(false),
+                    }],
+                },
+            ],
+            max_tokens: 1024,
+            tools: with_tool.then(|| {
+                vec![ToolDefinition {
+                    name: "get_weather".to_string(),
+                    description: "Get weather by city".to_string(),
+                    input_schema: json!({"type": "object"}),
+                }]
+            }),
+            sampling: SamplingControls::default(),
+            thinking: None,
+            extra_body: None,
+            cache_prompt: true,
+        }
+    }
+
+    #[test]
+    fn cache_prompt_marks_system_and_conversation_tail() {
+        let body = build_request(&cache_request(Some("You are helpful."), true), false);
+
+        // System becomes a block array carrying the static-prefix breakpoint.
+        assert_eq!(body["system"][0]["type"], json!("text"));
+        assert_eq!(body["system"][0]["text"], json!("You are helpful."));
+        assert_eq!(
+            body["system"][0]["cache_control"]["type"],
+            json!("ephemeral")
+        );
+        // With a system prompt present the tool does not also get a breakpoint.
+        assert_eq!(body["tools"][0].get("cache_control"), None);
+        // The last block of each of the final two messages is a breakpoint.
+        assert_eq!(
+            body["messages"][0]["content"][1]["cache_control"]["type"],
+            json!("ephemeral")
+        );
+        assert_eq!(body["messages"][0]["content"][0].get("cache_control"), None);
+        assert_eq!(
+            body["messages"][1]["content"][0]["cache_control"]["type"],
+            json!("ephemeral")
+        );
+    }
+
+    #[test]
+    fn cache_prompt_without_system_marks_last_tool() {
+        let body = build_request(&cache_request(None, true), false);
+
+        assert!(body.get("system").is_none());
+        assert_eq!(
+            body["tools"][0]["cache_control"]["type"],
+            json!("ephemeral")
+        );
     }
 
     #[test]
@@ -1066,7 +1251,10 @@ mod tests {
 
         assert_eq!(response.id, "msg_123");
         assert_eq!(response.stop_reason, Some(StopReason::ToolUse));
-        assert_eq!(response.usage.input_tokens, 11);
+        // input_tokens is normalized to the full prompt size: the raw uncached
+        // 11 plus cache_creation (3) and cache_read (5) = 19. The cache counts
+        // remain available as informational subsets.
+        assert_eq!(response.usage.input_tokens, 19);
         assert_eq!(response.usage.output_tokens, 7);
         assert_eq!(response.usage.cache_creation_input_tokens, Some(3));
         assert_eq!(response.usage.cache_read_input_tokens, Some(5));

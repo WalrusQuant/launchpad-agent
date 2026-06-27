@@ -153,7 +153,7 @@ Legend: `✅` done · `◑` partial · `✗` missing. Every `◑`/`✗` has conc
 ## 12. Providers / models / auth
 
 - ✅ 25 presets; 3 native wire APIs (Anthropic/OpenAI/Google); model picker; key reuse
-- ✗ **Prompt caching** (Anthropic `cache_control`, OpenAI/Gemini caching) — only usage tokens tracked, not wired into request build
+- ◑ **Prompt caching** — ✅ Anthropic `cache_control` breakpoints (static prefix = system + tools, plus rolling breakpoints on the last two messages) wired into the request build, default-on via `[caching] enabled` with per-config opt-out; cache-token usage surfaced on both the non-streaming and streaming paths. OpenAI/Gemini caching is automatic/server-side (no request fields needed) and cache-read token counts are parsed (incl. the OpenAI Responses `input_tokens_details.cached_tokens` fix). ✗ remaining: OpenAI `prompt_cache_key` routing hint, Google explicit `cachedContent` resources.
 - ✗ **`tool_choice` / forced-tool passthrough** (types described in comments, not built)
 - ✗ **Structured outputs / JSON mode** (`response_format` / `json_schema`)
 - ✗ **Model fallback chain** (retry on alternate model on failure/rate-limit)

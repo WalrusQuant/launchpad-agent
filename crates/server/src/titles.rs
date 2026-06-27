@@ -57,6 +57,7 @@ pub(crate) fn build_title_generation_request(
         },
         thinking: None,
         extra_body: None,
+        cache_prompt: false,
     }
 }
 

@@ -36,6 +36,7 @@ pub async fn test_model_connection(
         },
         thinking: request_thinking,
         extra_body,
+        cache_prompt: false,
     };
     let mut stream = provider.completion_stream(request).await?;
     let mut reply_preview = String::new();

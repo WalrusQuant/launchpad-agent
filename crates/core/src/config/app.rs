@@ -25,6 +25,9 @@ pub struct AppConfig {
     /// Sandbox enforcement defaults applied to new sessions.
     #[serde(default)]
     pub sandbox: SandboxConfig,
+    /// Prompt-caching defaults applied to new sessions.
+    #[serde(default)]
+    pub caching: CachingConfig,
     /// Policy that Context-window management and compaction defaults.
     pub context: ContextManageConfig,
     /// Transport and server runtime defaults.
@@ -39,6 +42,26 @@ pub struct AppConfig {
     /// TODO: Not sure what's purpose of `project_root_markers`?
     /// Marker names used when discovering a project root.
     pub project_root_markers: Vec<String>,
+}
+
+/// User-facing prompt-caching configuration parsed from the `[caching]`
+/// config section.
+///
+/// Defaults to enabled: providers with request-side caching (currently
+/// Anthropic) attach `cache_control` breakpoints to the static request prefix
+/// (system prompt + tools) and the conversation tail, trading a one-time write
+/// premium for cheap reads on every subsequent turn. Set `enabled = false` to
+/// opt out (e.g. for an Anthropic-compatible proxy that rejects `cache_control`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CachingConfig {
+    /// When true (default) eligible providers emit prompt-caching breakpoints.
+    pub enabled: bool,
+}
+
+impl Default for CachingConfig {
+    fn default() -> Self {
+        Self { enabled: true }
+    }
 }
 
 /// Selects the model used for summary generation.
@@ -82,6 +105,7 @@ impl Default for AppConfig {
             summary_model: SummaryModelSelection::UseTurnModel,
             safety_policy_model: SafetyPolicyModelSelection::UseAxiliaryModel,
             sandbox: SandboxConfig::default(),
+            caching: CachingConfig::default(),
             server: ServerConfig {
                 listen: Vec::new(),
                 max_connections: 32,

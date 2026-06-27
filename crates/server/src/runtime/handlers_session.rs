@@ -140,6 +140,7 @@ impl ServerRuntime {
                 // so a request that only overrides `permission_mode` does not
                 // silently drop the configured sandbox.
                 sandbox_policy: sandbox_policy.or_else(|| self.deps.sandbox_policy.clone()),
+                prompt_caching_enabled: self.deps.prompt_caching_enabled,
                 ..defaults
             })
         } else {

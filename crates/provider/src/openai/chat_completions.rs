@@ -1141,6 +1141,7 @@ mod tests {
             },
             thinking: Some("medium".to_string()),
             extra_body: None,
+            cache_prompt: false,
         };
 
         let body = build_request(&request, true);
@@ -1177,6 +1178,7 @@ mod tests {
             sampling: SamplingControls::default(),
             thinking: Some("disabled".to_string()),
             extra_body: None,
+            cache_prompt: false,
         };
 
         let body = build_request(&request, false);
@@ -1205,6 +1207,7 @@ mod tests {
             },
             thinking: Some("enabled".to_string()),
             extra_body: None,
+            cache_prompt: false,
         };
 
         let body = build_request(&request, false);
@@ -1235,6 +1238,7 @@ mod tests {
             },
             thinking: Some("enabled".to_string()),
             extra_body: None,
+            cache_prompt: false,
         };
 
         let body = build_request(&request, true);

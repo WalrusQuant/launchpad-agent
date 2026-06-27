@@ -1,3 +1,70 @@
+# Prompt caching (§12)
+
+**Status: COMPLETE (2026-06-26). Shipped + verified.** Parity roadmap §12.
+
+Anthropic `cache_control` ephemeral breakpoints are now emitted on the main turn
+request: one on the static prefix (system block, or the last tool when there is
+no system prompt — tools precede system in Anthropic's cache order) plus rolling
+breakpoints on the last two messages so the previous turn stays a cache hit as
+history grows (≤3 of the 4 allowed breakpoints).
+
+Plumbing: `ModelRequest::cache_prompt` (`protocol/model.rs`, `#[serde(default)]`,
+set true **only** in the main query loop — titles/compaction stay uncached) ←
+`SessionConfig::prompt_caching_enabled` (default true) ← `CachingConfig`
+(`config/app.rs`, `[caching] enabled`, default true) threaded through the server
+deps via `with_prompt_caching` (mirrors how `[sandbox]` reaches sessions). Opt
+out with `[caching] enabled = false`.
+
+The OFF path is byte-identical to before: `system` stays a plain string (untagged
+`AnthropicSystem` enum) and no `cache_control` keys appear anywhere (asserted in
+`build_request_includes_sampling_tools_and_thinking`).
+
+Also fixed two read-side gaps: Anthropic **streaming** usage now extracts
+`cache_creation_input_tokens` / `cache_read_input_tokens` from the SSE
+`message_start`/`message_delta` usage objects (was hardcoded `None`), and OpenAI
+**Responses** `parse_usage` now reads `input_tokens_details.cached_tokens`.
+
+Out of scope (follow-ups): OpenAI `prompt_cache_key` routing hint, Google
+explicit `cachedContent` resources (both providers cache automatically already).
+
+**Post-review fix (ship-blocker caught in review):** with caching default-on,
+Anthropic's `input_tokens` reports only the *uncached* remainder, so
+`last_input_tokens` (→ `TokenBudget::should_compact`) under-counted and
+auto-compaction would never fire on long cache-hit sessions (context grows until
+the provider rejects the request). Fixed at the provider boundary: `Usage::input_tokens`
+is normalized to the full prompt size (`uncached + cache_creation + cache_read`),
+matching the OpenAI/Gemini convention where the input count already includes
+cached tokens. No call-site change needed; the cache fields remain subsets. A
+naive call-site sum would have double-counted for OpenAI/Gemini (their
+`cache_read` is a subset of `input_tokens`), so normalization at the source is
+the correct altitude.
+
+**Refactor (review):** extracted the self-contained caching primitives
+(`CacheControl`, `AnthropicSystem`, `build_system`, `read_stream_cache_usage`,
+`prompt_input_tokens`) into a new sibling module `crates/provider/src/anthropic/cache.rs`
+(CLAUDE.md mandates new functionality in sibling modules for the oversize
+`messages.rs`). The AST-coupled breakpoint walker (`apply_cache_breakpoints`,
+`mark_block_cached`) stays next to the request types. Also dropped the dead
+`Option<CacheControl>` param on the block marker (only ever `Some(ephemeral())`).
+
+Tests: +7 (`cache_prompt_marks_system_and_conversation_tail`,
+`cache_prompt_without_system_marks_last_tool` in messages.rs;
+`build_system_off_path_is_plain_string`, `build_system_cached_emits_block_with_breakpoint`,
+`read_stream_cache_usage_updates_only_present_fields`,
+`prompt_input_tokens_sums_uncached_and_cache_counts` in cache.rs;
+`parse_usage_reads_cached_tokens_from_input_details` in responses.rs). 488 pass;
+fmt + clippy clean.
+
+Files: `crates/protocol/src/model.rs`, `crates/core/src/config/app.rs`,
+`crates/core/src/session.rs`, `crates/core/src/query/mod.rs`,
+`crates/server/src/{execution,bootstrap,titles}.rs`,
+`crates/server/src/runtime/handlers_session.rs`,
+`crates/core/src/compaction/llm_compactor.rs`,
+`crates/provider/src/anthropic/messages.rs`,
+`crates/provider/src/openai/responses.rs`.
+
+---
+
 # CLI Resume Flags — `--continue` / `--resume` / `--session-id`
 
 **Status: COMPLETE (2026-06-26). All 4 phases shipped + verified.** Parity roadmap §1 + §16.

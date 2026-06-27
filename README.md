@@ -162,6 +162,7 @@ on the result.
 - **Tool use** — bash, read, write, glob, grep, ls, apply_patch, webfetch, websearch, skill, update_plan, todowrite, question
 - **MCP runtime** — stdio-transport MCP servers are auto-discovered from `config.toml` and their tools appear in the registry namespaced as `mcp__<server>__<tool>`
 - **Session persistence** via rollout files in `~/.launchpad/agent/sessions/`
+- **Prompt caching** — Anthropic turns emit `cache_control` breakpoints (system + tools prefix, plus the conversation tail) so repeated context is billed once and read cheaply on every later turn; on by default, opt out with `[caching] enabled = false`. OpenAI/Gemini caching is automatic server-side; cache-token usage is tracked for all three.
 - **LLM-based context compaction** with JSON snapshots (falls back to naive oldest-message drop on summarizer failure)
 - **Approval flow** with per-session tool/path/host caching so repeated asks don't re-bother you
 - **Polished TUI** — slate + cyan palette, ASCII logo, slash-command suggestions, tool-call tree connectors, collapsible reasoning, tool-output previews
@@ -197,6 +198,13 @@ model = "meta-llama/llama-3.3-70b-instruct"
 ```
 
 Env-var overrides: `LPA_PROVIDER`, `LPA_MODEL`, `LPA_WIRE_API`, `LPA_BASE_URL`, `LPA_API_KEY`.
+
+Prompt caching is on by default. To disable it (e.g. for an Anthropic-compatible proxy that rejects `cache_control`):
+
+```toml
+[caching]
+enabled = false
+```
 
 Per-project overrides live at `<workspace>/.lpagent/config.toml`.
 

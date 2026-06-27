@@ -35,12 +35,12 @@ No justfile / Makefile. Use cargo directly:
 
 ```bash
 cargo build --release
-cargo test --workspace      # 481 tests currently passing
+cargo test --workspace      # 488 tests currently passing
 cargo run -- onboard        # TUI configure flow (alias: the app launches straight into it on first run)
 cargo run -- prompt "..."   # Single-shot completion
 ```
 
-Rust 1.85+. All 481 tests currently pass — keep it that way.
+Rust 1.85+. All 488 tests currently pass — keep it that way.
 
 ## Config & env
 
@@ -70,6 +70,7 @@ Rust 1.85+. All 481 tests currently pass — keep it that way.
 - **LLM-based context compaction** — selector → summarization → JSON snapshot → prompt-view rebuild → rollout journal. Falls back to legacy naive drop on summarizer failure. See `crates/core/src/compaction/`.
 - **Approval flow (UI + cache)** — TUI prompts with y/n/Esc when an `Ask` decision arrives, sends the response via `approval/respond`, and renders the resolution in the transcript. `RuntimeSession` owns a shared `Arc<tokio::sync::Mutex<ApprovalCache>>` that the orchestrator consults — approving a tool at `Session` or `Tool` scope skips future asks for that tool for the rest of the session.
 - **Session persistence** (rollout files in `~/.launchpad/agent/sessions/`)
+- **Prompt caching (Anthropic)** — the main turn request emits `cache_control` ephemeral breakpoints: one on the static prefix (system block, or the last tool when there is no system prompt — tools precede system in Anthropic's cache order, so a system breakpoint caches both) plus rolling breakpoints on the last two messages so the previous turn stays a cache hit as history grows. Default-on; opt out with `[caching] enabled = false`. Threaded as `ModelRequest::cache_prompt` (set only in the main query loop — titles/compaction stay uncached) ← `SessionConfig::prompt_caching_enabled` ← `CachingConfig` (`config/app.rs`) via the server deps (`with_prompt_caching`). Cache-token usage is surfaced on both non-streaming and streaming Anthropic paths; OpenAI/Gemini caching is automatic server-side and their cache-read counts are parsed (incl. OpenAI Responses `input_tokens_details.cached_tokens`). **Usage normalization:** Anthropic reports `input_tokens` as the *uncached* remainder only, so the provider normalizes `Usage::input_tokens` to the full prompt size (`uncached + cache_creation + cache_read`) to match the OpenAI/Gemini convention (their input count already includes cached tokens). This keeps `TokenBudget::should_compact` / `last_input_tokens` provider-agnostic — without it, caching-on sessions would under-count context and never auto-compact. The cache fields stay as informational subsets. Caching code split across `crates/provider/src/anthropic/messages.rs` (`build_request`, `apply_cache_breakpoints`, `mark_block_cached`) and `crates/provider/src/anthropic/cache.rs` (`CacheControl`, `AnthropicSystem`, `build_system`, `read_stream_cache_usage`, `prompt_input_tokens`).
 - **Secret redaction**, permission policy (rule-based)
 - **`/configure` onboarding flow** with 25 provider presets (anthropic, openai, google, openrouter, groq, together, mistral, deepseek, xai, fireworks, cerebras, perplexity, moonshot, deepinfra, nebius, hyperbolic, novita, sambanova, lambda, nvidia, github, zai_coding, ollama, lmstudio, custom). Each non-custom preset ships a **curated, selectable model list** (`PresetModel` in `provider_presets.rs`), so every provider — not just first-party — shows a model picker; a trailing "Custom model…" row drops to manual slug entry with a provider-specific `slug_hint` example. **API keys are reused automatically**: selecting a new model for a provider that already has a saved key skips the key prompt entirely (a validation failure re-prompts for the key). Current-config summary card, masked key display via `/config`, reasoning toggle via `/reasoning`. `/onboard` kept as an alias.
 - **Polished TUI** — slate + cyan palette, ASCII logo banner, `❯` user messages with slate bubble, `◇ tool  args` / `└ preview` tree connectors for tool calls, collapsible reasoning (`∙ thinking…` → `∙ thought (N chars)`), explicit end-of-turn markers (`◼ interrupted`, `Max tokens reached`, `No response`).
@@ -108,7 +109,7 @@ modules:
 - `crates/tui/src/tests.rs` (1,606) — test file; split into a `tests/` dir by domain when touched
 - `crates/provider/src/openai/chat_completions.rs` (1,469) — could extract response parsing
 - `crates/provider/src/openai/chat_completions/stream.rs` (1,125) — streaming state machine (largely irreducible)
-- `crates/provider/src/anthropic/messages.rs` (1,105) — could split request build vs. response parse
+- `crates/provider/src/anthropic/messages.rs` (1,293) — could split request build vs. response parse; the caching primitives already live in the sibling `anthropic/cache.rs`
 
 Near the line (700–800, watch when editing): `apply_patch/tests.rs` (771),
 `render/markdown.rs` (755), `openai/responses.rs` (750), `safety/lib.rs` (748),

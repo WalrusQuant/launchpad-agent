@@ -590,6 +590,7 @@ mod tests {
             },
             thinking: Some("medium".to_string()),
             extra_body: None,
+            cache_prompt: false,
         };
 
         let body = build_request(&request);
