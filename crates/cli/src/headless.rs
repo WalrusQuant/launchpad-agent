@@ -9,6 +9,7 @@
 //! session/turn/persistence instead of duplicating it in the CLI.
 
 use std::path::Path;
+use std::time::Instant;
 
 use anyhow::{Context, Result};
 use lpa_client::{StdioServerClient, StdioServerClientConfig};
@@ -19,6 +20,7 @@ use lpa_protocol::{
 };
 
 use crate::event_text::completed_agent_message_text;
+use crate::headless_output::{OutputFormat, TurnOutcome, emit_stream_event, render_result};
 use crate::server_env::server_env_overrides;
 
 /// Which session a headless run targets, resolved from the `--resume` /
@@ -54,6 +56,8 @@ pub struct HeadlessOptions {
     pub continue_session: bool,
     /// `--session-id <id>` (raw, parsed in [`HeadlessOptions::session_selector`]).
     pub session_id: Option<String>,
+    /// `--output-format text|json|stream-json`.
+    pub output_format: OutputFormat,
 }
 
 impl HeadlessOptions {
@@ -156,6 +160,7 @@ fn select_continue_session(sessions: &[SessionSummary], target_cwd: &Path) -> Op
 /// the final assistant message to stdout. Returns `Err` on turn failure so the
 /// caller can map it to a non-zero exit code.
 pub async fn run_headless(options: HeadlessOptions) -> Result<()> {
+    let started = Instant::now();
     let cwd = std::env::current_dir()?;
     let selector = options.session_selector()?;
     let mut resolved = resolve_provider_settings()
@@ -175,26 +180,33 @@ pub async fn run_headless(options: HeadlessOptions) -> Result<()> {
     .context("spawn server subprocess")?;
     client.initialize().await.context("initialize server")?;
 
+    // Infra errors (resume of an unknown id, transport failures) bubble up as
+    // `Err` and are reported on stderr by the caller; a failed *turn* is carried
+    // inside `TurnOutcome::error` so it can be rendered in the chosen format.
     let outcome = run_turn_for_selector(&mut client, &options, &resolved, &cwd, selector).await;
     client.shutdown().await.ok();
-    let final_message = outcome?;
+    let outcome = outcome?;
 
-    match final_message {
-        Some(text) => println!("{text}"),
-        None => eprintln!("lpagent [prompt] empty response"),
+    let code = render_result(
+        options.output_format,
+        &outcome,
+        started.elapsed().as_millis(),
+    );
+    if code != 0 {
+        std::process::exit(code);
     }
     Ok(())
 }
 
 /// Resolves the target session for the selector (start / resume / continue /
-/// adopt), runs one turn against it, and returns the final assistant message.
+/// adopt), runs one turn against it, and returns its [`TurnOutcome`].
 async fn run_turn_for_selector(
     client: &mut StdioServerClient,
     options: &HeadlessOptions,
     resolved: &ResolvedProviderSettings,
     cwd: &Path,
     selector: SessionSelector,
-) -> Result<Option<String>> {
+) -> Result<TurnOutcome> {
     let session_id = resolve_target_session(client, options, resolved, cwd, selector).await?;
     client
         .turn_start(TurnStartParams {
@@ -210,7 +222,7 @@ async fn run_turn_for_selector(
         })
         .await
         .context("start turn")?;
-    drive_turn_to_completion(client).await
+    drive_turn_to_completion(client, options.output_format, session_id).await
 }
 
 /// Maps a [`SessionSelector`] to a concrete session id, starting or resuming as
@@ -289,29 +301,50 @@ async fn resume(client: &mut StdioServerClient, session_id: SessionId) -> Result
         .map(|_| ())
 }
 
-/// Drains server notifications until the turn completes, accumulating the latest
-/// assistant message. `turn/completed` carries only status — the assistant text
-/// arrives via `item/completed` events — so the final message is captured from
-/// the last completed agent-message item. Returns `Err` when the turn fails.
-async fn drive_turn_to_completion(client: &mut StdioServerClient) -> Result<Option<String>> {
+/// Drains server notifications until the turn completes, building a
+/// [`TurnOutcome`]. `turn/completed` carries only status + usage — the assistant
+/// text arrives via `item/completed` events — so the final message is captured
+/// from the last completed agent-message item. Under `stream-json` each
+/// externally-visible event is emitted as it arrives. A *failed* turn returns an
+/// `Ok` outcome with `error` set (so it can be rendered per format); only a lost
+/// connection is an `Err`.
+async fn drive_turn_to_completion(
+    client: &mut StdioServerClient,
+    format: OutputFormat,
+    session_id: SessionId,
+) -> Result<TurnOutcome> {
     let mut final_message: Option<String> = None;
     loop {
-        match client.recv_event().await? {
-            Some((_, ServerEvent::ItemCompleted(payload))) => {
+        let Some((_, event)) = client.recv_event().await? else {
+            anyhow::bail!("server closed before the turn completed");
+        };
+        if format.is_stream() {
+            emit_stream_event(&event);
+        }
+        match event {
+            ServerEvent::ItemCompleted(payload) => {
                 if let Some(text) = completed_agent_message_text(&payload) {
                     final_message = Some(text);
                 }
             }
-            Some((_, ServerEvent::TurnCompleted(payload))) => match payload.turn.status {
-                TurnStatus::Completed => return Ok(final_message),
-                TurnStatus::Failed => {
-                    let detail = final_message.unwrap_or_else(|| "turn failed".to_string());
-                    anyhow::bail!("prompt failed: {detail}");
-                }
-                other => anyhow::bail!("prompt ended with unexpected status {other:?}"),
-            },
-            Some(_) => {}
-            None => anyhow::bail!("server closed before the turn completed"),
+            ServerEvent::TurnCompleted(payload) => {
+                let error = match payload.turn.status {
+                    TurnStatus::Completed => None,
+                    TurnStatus::Failed => Some(
+                        final_message
+                            .clone()
+                            .unwrap_or_else(|| "turn failed".to_string()),
+                    ),
+                    other => Some(format!("turn ended with unexpected status {other:?}")),
+                };
+                return Ok(TurnOutcome {
+                    session_id,
+                    final_message,
+                    usage: payload.turn.usage,
+                    error,
+                });
+            }
+            _ => {}
         }
     }
 }
@@ -323,12 +356,13 @@ mod tests {
     use lpa_protocol::{SessionId, SessionRuntimeStatus, SessionSummary, SessionTitleState};
     use pretty_assertions::assert_eq;
 
-    use super::{HeadlessOptions, SessionSelector, select_continue_session};
+    use super::{HeadlessOptions, OutputFormat, SessionSelector, select_continue_session};
 
     fn opts() -> HeadlessOptions {
         HeadlessOptions {
             prompt: "hi".to_string(),
             model: None,
+            output_format: OutputFormat::Text,
             system_prompt: None,
             append_system_prompt: None,
             allowed_tools: Vec::new(),

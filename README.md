@@ -136,7 +136,20 @@ lpagent -p --resume <session-id> "and step 2" # resume a specific session by id
 lpagent -p --session-id <uuid> "..."          # run under a chosen id (resume it, or create it)
 ```
 
-Flags (headless): `--model`, `--system-prompt` / `--append-system-prompt`,
+Structured output for scripting:
+
+```bash
+lpagent -p "list the failing tests" --output-format json | jq .result
+lpagent -p "..." --output-format stream-json        # NDJSON events, then a result line
+```
+
+`--output-format json` prints a single result object (`type`, `subtype`,
+`is_error`, `result`, `session_id`, `duration_ms`, `num_turns`, `usage`).
+`stream-json` emits one NDJSON line per event (assistant text, tool calls/results)
+followed by that same result object.
+
+Flags (headless): `--model`, `--output-format text|json|stream-json`,
+`--system-prompt` / `--append-system-prompt`,
 `--allowed-tools` / `--disallowed-tools` (comma-separated),
 `--dangerously-skip-permissions`, `-r`/`--resume <id>`, `-c`/`--continue`,
 `--session-id <uuid>` (the three are mutually exclusive), `--verbose` / `--debug`.

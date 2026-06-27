@@ -10,10 +10,12 @@ use lpa_utils::find_lpa_home;
 mod agent;
 mod event_text;
 mod headless;
+mod headless_output;
 mod server_env;
 
 use agent::run_agent;
 use headless::{HeadlessOptions, run_headless};
+use headless_output::OutputFormat;
 
 /// Process exit codes. Documented here so scripts can branch on `lpagent`'s
 /// result. `clap` already exits with `USAGE` (2) on argument-parse failures.
@@ -40,6 +42,15 @@ struct Cli {
     /// prompt is read from stdin, so `cat task.txt | lpagent -p` works.
     #[arg(short = 'p', long = "print", value_name = "PROMPT", num_args = 0..=1, default_missing_value = "", global = true)]
     print: Option<String>,
+
+    /// Output format for headless runs: `text` (default), `json`, or `stream-json`.
+    #[arg(
+        long = "output-format",
+        global = true,
+        value_enum,
+        default_value_t = OutputFormat::Text
+    )]
+    output_format: OutputFormat,
 
     /// Override the model used for this session.
     #[arg(long, global = true)]
@@ -142,6 +153,7 @@ impl Cli {
             resume: self.resume.clone(),
             continue_session: self.continue_session,
             session_id: self.session_id.clone(),
+            output_format: self.output_format,
         }
     }
 }
@@ -408,7 +420,8 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::{
-        Cli, Command, LogLevel, ServerProcessArgs, cli_logging_overrides, logging_process_name,
+        Cli, Command, LogLevel, OutputFormat, ServerProcessArgs, cli_logging_overrides,
+        logging_process_name,
     };
 
     /// A `Cli` with every field at its default; tests tweak the fields they care
@@ -417,6 +430,7 @@ mod tests {
         Cli {
             command: None,
             print: None,
+            output_format: OutputFormat::Text,
             model: None,
             system_prompt: None,
             append_system_prompt: None,

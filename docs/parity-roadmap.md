@@ -11,7 +11,7 @@ Legend: `✅` done · `◑` partial · `✗` missing. Every `◑`/`✗` has conc
 
 - ✅ Interactive TUI; ✅ `onboard`, `prompt` (one-shot), `doctor`, `server` subcommands
 - ✅ **`-p` / `--print` non-interactive mode** (run, emit result, exit; no TUI)
-- ✗ **`--output-format text|json|stream-json`** (structured machine output)
+- ✅ **`--output-format text|json|stream-json`** (structured machine output; `json` emits a Claude-Code-shaped `result` object, `stream-json` emits NDJSON events + a final result)
 - ✗ **`--input-format text|stream-json`**
 - ✅ **stdin piping** (`cat x | lpagent -p`)
 - ✅ **`--continue` (resume most recent in cwd)** and **`--resume <id>`** flags
